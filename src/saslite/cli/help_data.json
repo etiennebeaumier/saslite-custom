@@ -1,0 +1,152 @@
+{
+  "aliases": {
+    "quickstart": "getting-started",
+    "usage": "getting-started",
+    "data": "files",
+    "native": "libraries",
+    "graphs": "plots",
+    "mww": "npar1way",
+    "fp": "npar1way",
+    "wilcoxon": "npar1way",
+    "repl": "interactive",
+    "api": "python",
+    "limitations": "troubleshooting",
+    "cli": "options"
+  },
+  "topics": {
+    "getting-started": {
+      "title": "Run SAS programs",
+      "body": "Run from the folder containing your SAS file, or pass an absolute path. Quote paths containing spaces.\n\n    saslite-custom print_food.sas\n    saslite-custom \"my program.sas\"\n    saslite-custom /path/to/project/program.sas\n    saslite-custom --version\n\nExecute SAS text directly:\n\n    saslite-custom -e 'data demo; x=42; run; proc print data=demo; run;'\n\nBoth saslite-custom and saslite launch this custom build within its installed environment. PATH and active virtual environments determine which installation runs; check --version. See help installation for setup. Each ordinary run starts a fresh session. WORK datasets do not persist between runs."
+    },
+    "libraries": {
+      "title": "Libraries, native SAS files and unchanged source",
+      "body": "SAS datasets are referenced as LIBRARY.MEMBER, for example TMP1.FOOD. Read food.sas7bdat directly; no CSV conversion is needed. Assign the library outside the SAS source:\n\n    saslite-custom --lib TMP1=/path/to/data program.sas\n    saslite-custom --lib TMP1=. --lib OTHER=../other program.sas\n\nFor a persistent project setting, place .saslite.json beside the SAS script:\n\n    {\"libraries\": {\"TMP1\": \".\"}}\n\nRelative config paths resolve against the configuration folder. --lib paths resolve against the terminal's current folder. Repeat --lib for multiple libraries. CLI assignments override project configuration; both override paths in matching LIBNAME statements, including Windows paths. Only the script-adjacent config is loaded. Interactive/-e sessions use the current folder's config. WORK is reserved and cannot be remapped.\n\nThe original SAS code can then remain unchanged:\n\n    proc print data=tmp1.food;\n    run;\n\nOr assign a library in SAS when desired:\n\n    libname tmp1 \"/path/to/data\";\n    proc print data=tmp1.food; run;\n\nUnmapped relative LIBNAME paths resolve against the SAS script directory. Member names and .sas7bdat extensions are matched case-insensitively. Native files take precedence over same-name XPT files; a corrupt native file causes an error. Native SAS date/time numbers are retained. User-defined format catalogs are not fully supported."
+    },
+    "files": {
+      "title": "Input files, temporary data, output and encoding",
+      "body": "Supported library input: native .sas7bdat and SAS Transport .xpt. WORK stores temporary datasets in memory. DATA steps can read native data into WORK:\n\n    data modif;\n        set tmp1.comptant;\n        if _n_=1 then offre=180;\n    run;\n\nNative SAS7BDAT writing is unsupported and raises an error. Configured libraries and LIBNAME persistence write actual .xpt files. They cannot replace a native member with the same name. Explicitly assign DISK for persistent transport output:\n\n    saslite-custom --workdir ./saved --format xpt program.sas\n\nIn the program, write DATA DISK.RESULT; ... RUN;. --workdir assigns DISK, not WORK. Its default --format sas7bdat supports reading only; select xpt for writes.\n\nImport/export CSV when you explicitly need it:\n\n    proc import datafile=\"input.csv\" out=demo dbms=csv getnames=yes;\n    run;\n    proc export data=demo outfile=\"output.csv\" dbms=csv;\n    run;\n\nUse absolute paths for import/export when launching outside the data folder. Source text defaults to UTF-8; for older accented SAS scripts:\n\n    saslite-custom --encoding latin1 program.sas\n    saslite-custom --encoding cp1252 program.sas\n\n--encoding applies to SAS source text, not the dataset encoding. Native data encoding is read from file metadata."
+    },
+    "plots": {
+      "title": "Readable plots in the terminal",
+      "body": "TTEST and NPAR1WAY plots print automatically as monospaced text. No browser or image terminal is required. Exact values remain in the statistical tables.\n\n    saslite-custom --plot-width 120 program.sas\n    saslite-custom --no-plots program.sas\n\nWidth range: 40-160 columns. Default uses LINESIZE (80 by default) and available terminal width; --plot-width overrides it. Tables can be wider than plots.\n\nSAS controls:\n\n    ods graphics off;\n    ods graphics on;\n\nTTEST selections: ALL, NONE, SUMMARY, HISTOGRAM, BOX, QQPLOT, PROFILES, AGREEMENT and local INTERVAL. Example: PLOTS=(SUMMARY QQPLOT). SUMMARY includes density histograms, boxes and confidence intervals. Paired designs also support profiles and agreement plots.\n\nNPAR1WAY selections: ALL, NONE, WILCOXONBOXPLOT (WILCOXON), FPBOXPLOT (FP), and local BOXPLOT for raw data. Example: PLOTS=(WILCOXONBOXPLOT FPBOXPLOT). Request the corresponding WILCOXON/FP tests. Default boxes show Wilcoxon ranks or FP placements.\n\nLegends: o outlier/observation, * overlapping observations, M mean; boxes span Q1-Q3 with a median line. Histograms use # bars, . normal density and ~ kernel density. Graphs are text adaptations; density bandwidth/binning and rasterization can differ from SAS ODS. Other procedures do not automatically gain these plots."
+    },
+    "interactive": {
+      "title": "Interactive use and restarting",
+      "body": "Start an interactive session with either command:\n\n    saslite-custom\n    saslite-custom -i\n\nEnter each complete DATA/PROC step on one line; the current prompt submits when it sees a semicolon. For multiline programs, save a .sas file and run it. WORK data persist for the life of the interactive session.\n\n    sas> proc print data=tmp1.food; run;\n    sas> help;\n    sas> help fp;\n    sas> exit;\n\nhelp and help TOPIC also work without the final semicolon. Help does not clear your pending input or execute SAS. quit; and exit; leave the prompt. Ctrl+C clears pending input; Ctrl+D exits. Ordinary file runs need no restart. Restart an existing Python/interactive session after upgrading the package."
+    },
+    "python": {
+      "title": "Python API and other project environments",
+      "body": "Use the Python interpreter from the environment where this custom package is installed:\n\n    python your_script.py\n\nIn Python:\n\n    from saslite import SasInterpreter\n    sas = SasInterpreter()\n    result = sas.execute('data demo; x=42; run;')\n    if not result.success:\n        raise RuntimeError(result.error)\n    print(sas.get_dataset('WORK', 'DEMO'))\n\nsas.execute_file('program.sas') loads script-adjacent configuration. sas.execute(text) uses the current session and does not automatically discover project configuration. Inspect result.success, result.error and result.steps; each step can contain errors, warnings and output_messages. See help installation for installing a release wheel into another environment. The legacy saslite-python launcher is available only in previously configured shared installations."
+    },
+    "language": {
+      "title": "DATA steps, SQL and macros",
+      "body": "The interpreter supports a subset of DATA-step and SQL syntax. Common DATA-step features include INPUT/DATALINES, SET, MERGE, assignments, IF/THEN/ELSE, WHERE, DO loops, OUTPUT, DELETE, RETAIN, KEEP/DROP/RENAME, LENGTH, LABEL and FORMAT. List variables explicitly when shorthand ranges are not accepted.\n\n    data sample;\n        input group value;\n        datalines;\n    1 10\n    1 12\n    2 18\n    2 22\n    ;\n    run;\n\n    data changed;\n        set sample;\n        doubled=value*2;\n    run;\n\nPROC SQL supports SELECT and table operations, filtering, joins, grouping and aggregate functions. Macro support includes %LET, %PUT, %MACRO/%MEND and %INCLUDE with practical limitations.\n\n    %let response=value;\n    proc means data=sample; var &response; run;\n\nUse help procedures for procedure examples and help functions for the installed function list. Parsing a SAS statement does not guarantee every option has full SAS behavior."
+    },
+    "troubleshooting": {
+      "title": "Troubleshooting and current limits",
+      "body": "Command not found: activate the environment where you installed the package. For pipx or legacy shared installs, check their launcher directory is on PATH. Check --version to confirm the custom build.\n\nLibrary/dataset not found: verify the .saslite.json beside your script, or pass --lib NAME=/actual/data/folder. The library must point to a directory containing the named dataset. Relative CSV input paths may require launching from the data folder or using an absolute path.\n\nParse error: check semicolons, spellings and supported options. SASLite is not a complete SAS runtime. Graphics procedures such as SGPLOT, full ODS reporting, remote SAS servers and many specialized procedures are unavailable. TTEST and NPAR1WAY do not implement BY/FREQ/WEIGHT or exact tests; TTEST is currently normal, two-sided analysis. Some other procedures accept more syntax than they fully execute; inspect results carefully.\n\nNative write error: use WORK for temporary data or actual XPT output for persistence. Renaming XPT to .sas7bdat does not create a native dataset.\n\nMissing statistics displayed as a dot with a warning: insufficient data or an undefined denominator may prevent a test. FP needs exactly two groups with at least two observations each.\n\nOutput too wide: reduce --plot-width for plots or use a wider terminal. Save the full output (tables/logs currently go to stderr):\n\n    saslite-custom program.sas > results.txt 2>&1\n    saslite-custom program.sas 2>&1 | less -S\n\nExit status is 0 for a successful run and nonzero for an error. Unknown help topics return 2. Optional GUI launchers require Flask/pywebview, which are not installed in the shared command-line environment."
+    },
+    "maintenance": {
+      "title": "Keeping this help current",
+      "body": "Source for this standalone custom project lives in src/saslite. Help is packaged in src/saslite/cli/help_data.json. CLI options and procedure/function inventories are generated from the implementation.\n\nUpdate affected help topics and examples for each change. Inspect rendered help, run regression tests, then record the review and build:\n\n    python -m saslite help\n    python -m unittest discover -s saslite_custom -p 'test_*.py'\n    python saslite_custom/check_help.py --record\n    python saslite_custom/build_wheel.py\n\nUse an editable development installation before this workflow. The builder checks procedure coverage and source fingerprints against help_review.json. Record only after reviewing help and passing tests; the guard does not establish semantic correctness. Install the tested wheel in the project and any maintained shared environment. See CONTRIBUTING.md for the release checklist."
+    },
+    "installation": {
+      "title": "Installation",
+      "body": "Install this custom fork from its source checkout (Python 3.10+):\n\n    python -m venv .venv\n    . .venv/bin/activate\n    python -m pip install .\n    saslite-custom --version\n    saslite-custom help\n\nOn Windows activate with .venv\\Scripts\\Activate.ps1 in PowerShell. Installation provides saslite-custom and saslite as equivalent commands in that environment. Optional extras: python -m pip install '.[excel]' or '.[gui]'.\n\nFor a shared command available outside a project, install a reviewed release wheel with pipx:\n\n    pipx install /path/to/saslite-0.4.1+custom.6-py3-none-any.whl\n\nExisting shared installations at ~/.local/share/saslite-custom/venv can be upgraded with that environment's Python and the exact wheel path. The legacy saslite-python launcher is specific to that installation, not supplied by a normal pip install. Public saslite upgrades can replace custom features. Use an isolated environment and check --version."
+    }
+  },
+  "procedures": {
+    "PRINT": {
+      "title": "Print observations",
+      "body": "Print a dataset, optionally selecting variables.\n\n    proc print data=tmp1.food; run;\n    proc print data=tmp1.food; var Couleur Desir; run;"
+    },
+    "CONTENTS": {
+      "title": "Dataset metadata",
+      "body": "Display dataset structure and variable information.\n\n    proc contents data=tmp1.food varnum; run;"
+    },
+    "MEANS": {
+      "title": "Descriptive statistics",
+      "body": "Statistics: N, MEAN, SUM, MIN, MAX, STD, MEDIAN. Supports VAR, CLASS, BY and OUTPUT; MAXDEC controls displayed decimals.\n\n    proc means data=tmp1.food n mean std min max maxdec=4;\n        class Couleur;\n        var Desir;\n    run;"
+    },
+    "SUMMARY": {
+      "title": "Summary statistics",
+      "body": "Uses the MEANS implementation and supported statistics.\n\n    proc summary data=tmp1.food;\n        class Couleur; var Desir;\n        output out=summary mean=mean_desir;\n    run;"
+    },
+    "TTEST": {
+      "title": "One-sample, independent and paired t-tests",
+      "body": "Options: DATA=, H0= (default 0), ALPHA= (default .05), NOPRINT, PLOTS=. Two-sided normal analysis. Shows N, mean, sample Std Dev, Std Err, min/max, mean/SD confidence limits, pooled and Satterthwaite tests and Folded F when applicable.\n\n    proc ttest data=tmp1.food;\n        class Couleur; var Desir;\n    run;\n\n    proc ttest data=tmp1.food h0=50 alpha=.05;\n        var Desir;\n    run;\n\n    proc ttest data=paired_data;\n        paired before*after;\n    run;\n\nCLASS must identify two groups. Without CLASS/PAIRED, VAR selects one-sample tests. PAIRED tests differences using complete pairs. If VAR is omitted, eligible numeric variables are selected (excluding CLASS). See help plots for graph controls. SIDES=, BY, WEIGHT, FREQ, ratio tests and exact tests are unsupported."
+    },
+    "NPAR1WAY": {
+      "title": "MWW/Wilcoxon, FP and Kruskal-Wallis",
+      "body": "Request WILCOXON (Mann-Whitney-Wilcoxon), FP (Fligner-Policello), or both. MWW is a local alias for WILCOXON. DATA= and one CLASS variable are required. VAR may list multiple responses.\n\n    proc npar1way data=tmp1.food wilcoxon fp;\n        class Couleur;\n        var Desir;\n    run;\n\nMWW: rank-sum S, Mann-Whitney U for the identified group, normal and t approximations, tie adjustments and Kruskal-Wallis. CORRECT=NO disables its default continuity correction. With more than two groups WILCOXON reports Kruskal-Wallis.\n\nFP: placement N/sum/mean/Std Dev, placement-sum difference, Z and normal one-/two-sided p-values. Ties get half credit. Exactly two groups with at least two observations each are required. FP assumes within-group symmetry and does not apply the MWW continuity correction.\n\n    proc npar1way data=tmp1.food fp(refclass=1);\n        class Couleur; var Desir;\n    run;\n\nFP defaults to first-listed minus second-listed class; listing order follows input occurrence. REFCLASS=1/2 selects a position. A quoted value, e.g. FP(REFCLASS='2'), selects that class label. Reversing reference changes the sign, not the two-sided p-value.\n\nNOPRINT suppresses output. PLOTS=NONE suppresses graphs; PLOTS=(WILCOXONBOXPLOT FPBOXPLOT) selects rank/placement boxes. Exact tests, BY, WEIGHT, FREQ and other NPAR1WAY tests are unsupported."
+    },
+    "CORR": {
+      "title": "Correlation analysis",
+      "body": "Pearson (default), Spearman or Kendall correlations; VAR selects numeric variables. NOSIMPLE hides summaries; OUTP= stores the matrix. Current calculations use complete cases across selected variables.\n\n    proc corr data=tmp1.food spearman;\n        var Attraction Desir Plaisir;\n    run;"
+    },
+    "REG": {
+      "title": "Linear regression",
+      "body": "MODEL specifies response and predictors. Supports NOINT, OUTEST= and OUTPUT predictions/residuals.\n\n    proc reg data=tmp1.food;\n        model Desir = Attraction Plaisir;\n    run;"
+    },
+    "LOGISTIC": {
+      "title": "Binary logistic regression",
+      "body": "MODEL selects the binary response and predictors. EVENT=, CLASS, ODDSRATIO, ALPHA= and output estimates are available as a subset of SAS logistic syntax.\n\n    proc logistic data=study;\n        model outcome(event='1') = age;\n    run;"
+    },
+    "FREQ": {
+      "title": "Frequency tables",
+      "body": "One-way tables and cross-tabulations using TABLES; options include MISSING, NOPRINT, NOROW, NOCOL and NOPERCENT. Not all SAS test/options syntax is supported.\n\n    proc freq data=tmp1.food;\n        tables Couleur;\n    run;"
+    },
+    "UNIVARIATE": {
+      "title": "Univariate summaries",
+      "body": "Descriptive distribution summaries for VAR variables. Full SAS NORMAL/PLOT options are not implemented.\n\n    proc univariate data=tmp1.food; var Desir; run;"
+    },
+    "SORT": {
+      "title": "Sort observations",
+      "body": "BY keys, DESCENDING and NODUPKEY are supported. Use OUT= for a separate result.\n\n    proc sort data=tmp1.food out=sorted; by Couleur Desir; run;"
+    },
+    "SQL": {
+      "title": "Queries and table operations",
+      "body": "SELECT, filtering, joins, grouping and aggregate functions; CREATE TABLE, INSERT, UPDATE and DELETE are supported subsets. End with QUIT.\n\n    proc sql;\n        select Couleur, avg(Desir) as MeanDesir\n        from tmp1.food group by Couleur;\n    quit;"
+    },
+    "IMPORT": {
+      "title": "Import delimited data",
+      "body": "DATAFILE=, OUT=, DBMS=, GETNAMES= and DELIMITER= are supported. Native SAS files use libraries instead of CSV conversion.\n\n    proc import datafile=\"input.csv\" out=demo dbms=csv getnames=yes;\n    run;"
+    },
+    "EXPORT": {
+      "title": "Export delimited data",
+      "body": "DATA=, OUTFILE=, DBMS= and DELIMITER= select output.\n\n    proc export data=tmp1.food outfile=\"food.csv\" dbms=csv; run;"
+    },
+    "APPEND": {
+      "title": "Append datasets",
+      "body": "Append DATA to BASE. This modifies BASE; native SAS7BDAT members cannot be overwritten.\n\n    proc append base=combined data=more_rows; run;"
+    },
+    "DATASETS": {
+      "title": "Manage a library",
+      "body": "CONTENTS, DELETE and basic MODIFY/RENAME operations. DELETE removes the named datasets. Use WORK for temporary examples.\n\n    proc datasets library=work; contents; quit;"
+    },
+    "COPY": {
+      "title": "Copy library members",
+      "body": "IN= and OUT= select libraries; SELECT or EXCLUDE limits the members. Persistent output uses XPT rather than native SAS7BDAT.\n\n    proc copy in=tmp1 out=work; select food; run;"
+    },
+    "TRANSPOSE": {
+      "title": "Transpose data",
+      "body": "DATA=, OUT=, PREFIX=, NAME= and VAR/ID/BY statements are supported.\n\n    proc transpose data=tmp1.food out=transposed; var Desir; run;"
+    },
+    "COMPARE": {
+      "title": "Compare datasets",
+      "body": "BASE= and COMPARE= select datasets. VAR/ID, OUT=, LISTVAR and BRIEF are available.\n\n    proc compare base=original compare=changed; var Desir; run;"
+    },
+    "FORMAT": {
+      "title": "Define basic display formats",
+      "body": "VALUE maps numeric/character keys and ranges to labels. Full SAS catalog behavior is not implemented.\n\n    proc format; value groupfmt 1='First' 2='Second'; run;"
+    },
+    "TABULATE": {
+      "title": "Simple summary tables",
+      "body": "CLASS, VAR and basic TABLE expressions produce summary tables; complex SAS layouts are outside this subset.\n\n    proc tabulate data=tmp1.food;\n        class Couleur; var Desir; table Couleur, Desir;\n    run;"
+    },
+    "REPORT": {
+      "title": "Basic reports",
+      "body": "COLUMN/COLUMNS, DEFINE and BY provide basic reporting. Full SAS report computation blocks and styling are unsupported.\n\n    proc report data=tmp1.food nowd;\n        column Couleur Desir;\n        define Couleur / group;\n        define Desir / mean;\n    run;"
+    }
+  }
+}

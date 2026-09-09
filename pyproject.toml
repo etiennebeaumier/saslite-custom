@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saslite"
+version = "0.4.1+custom.6"
+description = "Custom SASLite interpreter with SAS-style statistics, terminal plots, native dataset reading, and built-in help"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "SASLite contributors"}]
+dependencies = ["lark>=1.2.2", "pandas>=2.2.0", "numpy>=1.26.0", "scipy>=1.11.0", "pyreadstat>=1.2.0"]
+
+[project.optional-dependencies]
+excel = ["openpyxl>=3.1.0"]
+gui = ["flask>=3.0.0", "pywebview>=5.0.0"]
+dev = ["build>=1.2", "twine>=6"]
+
+[project.scripts]
+saslite = "saslite.cli.main:main"
+saslite-custom = "saslite.cli.main:main"
+saslite-gui = "saslite.gui.app:main"
+saslite-desktop = "saslite.gui.desktop:main"
+
+[project.urls]
+Repository = "https://github.com/etiennebeaumier/saslite-custom"
+Issues = "https://github.com/etiennebeaumier/saslite-custom/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+saslite = ["**/*.json", "**/*.lark", "**/*.html", "**/*.css", "**/*.js"]

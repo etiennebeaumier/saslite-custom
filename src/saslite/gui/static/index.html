@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SASLite</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #1e1e2e;
+  --surface: #282840;
+  --surface2: #313150;
+  --border: #3e3e5e;
+  --text: #cdd6f4;
+  --text-dim: #7f849c;
+  --accent: #89b4fa;
+  --accent2: #a6e3a1;
+  --error: #f38ba8;
+  --warn: #fab387;
+  --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Top Bar ── */
+.topbar {
+  height: 42px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.topbar .logo {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+.topbar .logo span { color: var(--text-dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+
+/* ── Layout ── */
+.main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 260px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.sidebar-header {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sidebar-header button {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.sidebar-header button:hover { color: var(--accent); border-color: var(--accent); }
+
+.ds-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+/* ── Library Tree ── */
+.lib-node {
+  user-select: none;
+}
+.lib-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  gap: 6px;
+  border-left: 3px solid transparent;
+}
+.lib-header:hover {
+  background: var(--surface2);
+}
+.lib-header.active-lib {
+  border-left-color: var(--accent);
+  background: rgba(137, 180, 250, 0.06);
+}
+.lib-chevron {
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 14px;
+  text-align: center;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.lib-chevron.open {
+  transform: rotate(90deg);
+}
+.lib-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+.lib-icon.work { color: var(--accent); }
+.lib-icon.disk { color: var(--accent2); }
+.lib-icon.memory { color: var(--warn); }
+.lib-name {
+  flex: 1;
+  font-family: var(--font-mono);
+  letter-spacing: 0.3px;
+}
+.lib-count {
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 400;
+}
+.lib-desc {
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 0 10px 4px 32px;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Dataset Items ── */
+.lib-datasets {
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+.lib-datasets.collapsed {
+  max-height: 0 !important;
+}
+.ds-item {
+  padding: 5px 10px 5px 38px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+.ds-item::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  width: 6px;
+  height: 1px;
+  background: var(--border);
+}
+.ds-item:hover { background: var(--surface2); }
+.ds-item.active { background: var(--surface2); color: var(--accent); }
+.ds-item .meta {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  margin-left: 8px;
+}
+.ds-item .del-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--error);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+  margin-left: 4px;
+}
+.ds-item:hover .del-btn { display: inline; }
+.lib-empty {
+  padding: 6px 10px 6px 38px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── Content Area ── */
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Editor ── */
+.editor-panel {
+  display: flex;
+  flex-direction: column;
+  height: 45%;
+  min-height: 120px;
+  border-bottom: 1px solid var(--border);
+}
+.editor-toolbar {
+  height: 36px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn-run {
+  background: var(--accent2);
+  color: #1e1e2e;
+  border: none;
+  padding: 4px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-run:hover { opacity: 0.85; }
+.btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-open {
+  background: var(--accent);
+  color: #1e1e2e;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.btn-open:hover { opacity: 0.85; }
+.btn-import {
+  background: none;
+  border: 1px solid var(--accent2);
+  color: var(--accent2);
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.btn-import:hover { background: rgba(166,227,161,0.1); }
+.btn-clear {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-clear:hover { color: var(--text); border-color: var(--text-dim); }
+.editor-wrap {
+  flex: 1;
+  position: relative;
+}
+#editor {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 12px 16px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+/* ── Results ── */
+.results-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.result-tabs {
+  height: 36px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 0;
+  flex-shrink: 0;
+}
+.tab-btn {
+  padding: 6px 16px;
+  font-size: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  height: 100%;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.result-content {
+  flex: 1;
+  overflow: auto;
+}
+
+/* ── Output Tab ── */
+#tab-output {
+  padding: 12px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+  word-break: normal;
+}
+.error-line { color: var(--error); }
+.note-line { color: var(--text-dim); }
+.success-line { color: var(--accent2); }
+
+/* ── Data Tab ── */
+#tab-data {
+  padding: 0;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+.data-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface2);
+  color: var(--accent);
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table tr:hover td { background: var(--surface); }
+.data-table .row-num {
+  color: var(--text-dim);
+  text-align: right;
+  padding-right: 8px;
+  width: 50px;
+  user-select: none;
+}
+
+/* ── Drop Zone ── */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(137,180,250,0.15);
+  border: 2px dashed var(--accent);
+  border-radius: 6px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  font-size: 16px;
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
+}
+.drop-overlay.active {
+  display: flex;
+}
+.data-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.data-info {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Resizer ── */
+.resizer {
+  height: 4px;
+  background: var(--border);
+  cursor: ns-resize;
+  flex-shrink: 0;
+}
+.resizer:hover { background: var(--accent); }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="logo">SASLite <span>Web GUI</span></div>
+</div>
+
+<!-- Main Layout -->
+<div class="main">
+
+  <!-- Sidebar: Dataset Browser -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>Libraries</span>
+      <button onclick="refreshLibraries()" title="Refresh">Refresh</button>
+    </div>
+    <div class="ds-list" id="libTree">
+      <div class="data-empty" style="padding:20px;font-size:12px">No datasets</div>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- Editor -->
+    <div class="editor-panel" id="editorPanel">
+      <div class="editor-toolbar">
+        <button class="btn-run" id="btnRun" onclick="runCode()" title="Run (Ctrl+Enter). Select text to run only selected.">
+          &#9654; Run
+        </button>
+        <button class="btn-open" onclick="openSasFile()" title="Open .sas program file">
+          &#128194; Open .sas
+        </button>
+        <button class="btn-import" onclick="importDataFile()" title="Import data file (sas7bdat/xpt/csv/excel)">
+          &#128229; Import Data
+        </button>
+        <button class="btn-clear" onclick="clearEditor()">Clear</button>
+        <select id="exampleSelect" onchange="loadExample(this.value)" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:3px 8px;border-radius:4px;font-size:12px;cursor:pointer;">
+          <option value="">-- Examples --</option>
+          <option value="basic">Basic DATA + PRINT</option>
+          <option value="sql">PROC SQL</option>
+          <option value="case_when">CASE WHEN</option>
+          <option value="like_between">LIKE / BETWEEN / IS NULL</option>
+          <option value="lag_dif">LAG / DIF</option>
+          <option value="proc_means">PROC MEANS</option>
+          <option value="proc_print_by">PROC PRINT BY</option>
+          <option value="libname">LIBNAME</option>
+          <option value="macro">Macro System</option>
+          <option value="full">Full Demo</option>
+        </select>
+      </div>
+      <div class="editor-wrap">
+        <div class="drop-overlay" id="dropOverlay">Drop file here</div>
+        <textarea id="editor" spellcheck="false" placeholder="Enter SAS code here...">/* Enter your SAS code */
+DATA employees;
+  INPUT name $ salary dept $;
+  DATALINES;
+  Alice 50000 HR
+  Bob 60000 IT
+  Charlie 55000 Sales
+  ;
+RUN;
+
+PROC PRINT DATA=employees; RUN;</textarea>
+      </div>
+    </div>
+
+    <div class="resizer" id="resizer"></div>
+
+    <!-- Results -->
+    <div class="results-panel">
+      <div class="result-tabs">
+        <button class="tab-btn active" data-tab="output" onclick="switchTab('output')">Output</button>
+        <button class="tab-btn" data-tab="data" onclick="switchTab('data')">Data</button>
+      </div>
+      <div class="result-content">
+        <div id="tab-output"></div>
+        <div id="tab-data" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── API calls ──
+
+const SAS_API_TOKEN = "__SASLITE_API_TOKEN__";
+
+function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const method = (options.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    headers.set('X-SASLite-Token', SAS_API_TOKEN);
+  }
+  return fetch(url, {...options, headers});
+}
+
+async function apiExecute(code) {
+  const res = await apiFetch('/api/execute', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({code}),
+  });
+  return res.json();
+}
+
+async function apiLibraries() {
+  const res = await apiFetch('/api/libraries');
+  return res.json();
+}
+
+async function apiGetDataset(libref, name) {
+  const res = await apiFetch(`/api/datasets/${encodeURIComponent(libref)}/${encodeURIComponent(name)}`);
+  return res.json();
+}
+
+async function apiDeleteDataset(libref, name) {
+  const res = await apiFetch(`/api/datasets/${encodeURIComponent(libref)}/${encodeURIComponent(name)}`, {method: 'DELETE'});
+  return res.json();
+}
+
+async function apiFileDialog(mode) {
+  const res = await apiFetch('/api/file-dialog', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({mode}),
+  });
+  return res.json();
+}
+
+async function apiOpenFile(path) {
+  const res = await apiFetch('/api/open-file', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({path}),
+  });
+  return res.json();
+}
+
+async function apiImportData(path) {
+  const res = await apiFetch('/api/import-data', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({path}),
+  });
+  return res.json();
+}
+
+// ── File operations ──
+
+async function openSasFile() {
+  try {
+    // Try native file dialog first (desktop mode)
+    const dlg = await apiFileDialog('open');
+    if (!dlg.success) {
+      // Fallback: use browser file input (web mode)
+      openSasFileFallback();
+      return;
+    }
+    const result = await apiOpenFile(dlg.path);
+    if (result.success) {
+      document.getElementById('editor').value = result.content;
+      document.getElementById('editor').focus();
+    } else {
+      alert('Failed to open file: ' + result.error);
+    }
+  } catch (e) {
+    openSasFileFallback();
+  }
+}
+
+function openSasFileFallback() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.sas';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    document.getElementById('editor').value = text;
+    document.getElementById('editor').focus();
+  };
+  input.click();
+}
+
+async function importDataFile() {
+  try {
+    // Try native file dialog first (desktop mode)
+    const dlg = await apiFileDialog('import');
+    if (!dlg.success) {
+      importDataFileFallback();
+      return;
+    }
+    const result = await apiImportData(dlg.path);
+    if (result.success) {
+      refreshLibraries();
+      showDataset('WORK', result.dataset.split('.')[1]);
+      const outEl = document.getElementById('tab-output');
+      outEl.innerHTML = `<span class="success-line">Imported ${escapeHtml(result.dataset)} (${escapeHtml(String(result.rows))} rows, ${escapeHtml(String(result.columns))} columns)</span>`;
+    } else {
+      alert('Failed to import: ' + result.error);
+    }
+  } catch (e) {
+    importDataFileFallback();
+  }
+}
+
+function importDataFileFallback() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.sas7bdat,.xpt,.csv,.xlsx,.xls';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    const datasetName = safeDatasetName(file.name);
+
+    try {
+      let df;
+      if (ext === 'csv') {
+        const text = await file.text();
+        const rows = text.trim().split('\n').map(line => line.split(',').map(v => v.trim()));
+        const headers = rows[0];
+        const data = rows.slice(1).map(row => {
+          const obj = {};
+          headers.forEach((h, i) => { obj[h] = row[i] || null; });
+          return obj;
+        });
+        // Send to server via execute with DATALINES
+        const colNames = headers.join(' ');
+        const dataLines = data.map(r => headers.map(h => r[h]).join(' ')).join('\n');
+        const code = `DATA ${datasetName};\n  INPUT ${colNames};\n  DATALINES;\n${dataLines}\n;\nRUN;`;
+        document.getElementById('editor').value = code;
+        await runCode();
+      } else {
+        // For binary formats, upload to server
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await apiFetch('/api/upload-data', {method: 'POST', body: formData});
+        const result = await res.json();
+        if (result.success) {
+          refreshLibraries();
+          showDataset('WORK', result.dataset.split('.')[1]);
+        } else {
+          alert('Failed to import: ' + result.error);
+        }
+      }
+    } catch (err) {
+      alert('Import error: ' + err.message);
+    }
+  };
+  input.click();
+}
+
+// ── Run code ──
+
+let running = false;
+
+async function runCode() {
+  if (running) return;
+  const editor = document.getElementById('editor');
+  const selected = editor.value.substring(editor.selectionStart, editor.selectionEnd);
+  const code = selected.trim() ? selected : editor.value;
+  if (!code.trim()) return;
+
+  running = true;
+  const btn = document.getElementById('btnRun');
+  btn.disabled = true;
+  btn.innerHTML = '&#9203; Running...';
+
+  const outEl = document.getElementById('tab-output');
+  outEl.innerHTML = '<span class="note-line">Executing...</span>';
+
+  try {
+    const result = await apiExecute(code);
+    renderOutput(result);
+    refreshLibraries();
+
+    // Auto-show data for first created dataset
+    if (result.steps) {
+      for (const step of result.steps) {
+        if (step.success && step.notes) {
+          for (const note of step.notes) {
+            const m = note.match(/(?:Dataset|Table) (\w+)\.(\w+) created/);
+            if (m) {
+              showDataset(m[1], m[2]);
+              break;
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    outEl.innerHTML = `<span class="error-line">Network error: ${e.message}</span>`;
+  }
+
+  running = false;
+  btn.disabled = false;
+  btn.innerHTML = '&#9654; Run';
+}
+
+function renderOutput(result) {
+  const outEl = document.getElementById('tab-output');
+  let html = '';
+
+  if (result.output) {
+    html += escapeHtml(result.output);
+  }
+
+  if (!result.success) {
+    html += `<span class="error-line">\nERROR: ${escapeHtml(result.error || 'Unknown error')}</span>`;
+    if (result.traceback) {
+      html += `\n<span class="error-line">${escapeHtml(result.traceback)}</span>`;
+    }
+  }
+
+  if (result.steps) {
+    for (const step of result.steps) {
+      if (step.error) {
+        html += `<span class="error-line">\nERROR: ${escapeHtml(step.error)}</span>`;
+      }
+      for (const w of (step.warnings || [])) {
+        html += `<span class="note-line">\nWARNING: ${escapeHtml(w)}</span>`;
+      }
+    }
+  }
+
+  if (result.success && !result.output) {
+    html += '<span class="success-line">Done.</span>';
+  }
+
+  outEl.innerHTML = html;
+}
+
+// ── Dataset browser ──
+
+const ICONS = {
+  work: '&#128193;',   // folder
+  disk: '&#128190;',   // floppy disk
+  memory: '&#9889;',   // bolt
+};
+
+// Track expanded state per library
+const _expandedLibs = {};
+
+async function refreshLibraries() {
+  try {
+    const data = await apiLibraries();
+    const treeEl = document.getElementById('libTree');
+
+    if (!data.libraries || data.libraries.length === 0) {
+      treeEl.innerHTML = '<div class="data-empty" style="padding:20px;font-size:12px">No datasets</div>';
+      return;
+    }
+
+    let html = '';
+    for (const lib of data.libraries) {
+      const libref = String(lib.libref || '');
+      const libArg = jsArg(libref);
+      const libAttr = escapeAttr(libref);
+      const iconKey = ['work', 'disk', 'memory'].includes(lib.icon) ? lib.icon : 'memory';
+      const datasets = Array.isArray(lib.datasets) ? lib.datasets : [];
+      const isOpen = _expandedLibs.hasOwnProperty(libref) ? _expandedLibs[libref] : (libref === 'WORK');
+      _expandedLibs[libref] = isOpen;
+
+      html += `<div class="lib-node" data-libref="${libAttr}">`;
+      html += `<div class="lib-header${isOpen ? ' active-lib' : ''}" onclick="toggleLib(${libArg})">`;
+      html += `<span class="lib-chevron${isOpen ? ' open' : ''}">&#9654;</span>`;
+      html += `<span class="lib-icon ${iconKey}">${ICONS[iconKey] || ICONS.memory}</span>`;
+      html += `<span class="lib-name">${escapeHtml(libref)}</span>`;
+      html += `<span class="lib-count">${escapeHtml(String(lib.count || 0))}</span>`;
+      html += `</div>`;
+
+      if (lib.description && libref !== 'WORK') {
+        html += `<div class="lib-desc" style="display:${isOpen ? '' : 'none'}">${escapeHtml(lib.description)}</div>`;
+      }
+
+      html += `<div class="lib-datasets${isOpen ? '' : ' collapsed'}" id="lib-${libAttr}" style="max-height:${isOpen ? datasets.length * 32 + 10 : 0}px">`;
+
+      if (datasets.length === 0) {
+        html += `<div class="data-empty" style="padding:6px 10px 6px 44px;font-size:11px">Empty</div>`;
+      } else {
+        for (const ds of datasets) {
+          const dsName = String(ds.name || '');
+          const dsArg = jsArg(dsName);
+          const dsAttr = escapeAttr(dsName);
+          html += `<div class="ds-item" data-libref="${libAttr}" data-name="${dsAttr}" onclick="showDataset(${libArg},${dsArg})">`;
+          html += `<span>${escapeHtml(dsName)}</span>`;
+          html += `<span><span class="meta">${escapeHtml(String(ds.rows || 0))}x${escapeHtml(String(ds.columns || 0))}</span>`;
+          html += `<button class="del-btn" onclick="event.stopPropagation();deleteDS(${libArg},${dsArg})" title="Delete">&times;</button>`;
+          html += `</span></div>`;
+        }
+      }
+
+      html += `</div></div>`;
+    }
+
+    treeEl.innerHTML = html;
+  } catch (e) {
+    console.error('Failed to refresh libraries:', e);
+  }
+}
+
+function toggleLib(libref) {
+  const node = document.querySelector(`.lib-node[data-libref="${libref}"]`);
+  if (!node) return;
+  const chevron = node.querySelector('.lib-chevron');
+  const dsList = node.querySelector('.lib-datasets');
+  const header = node.querySelector('.lib-header');
+  const desc = node.querySelector('.lib-desc');
+  const isOpen = chevron.classList.contains('open');
+
+  _expandedLibs[libref] = !isOpen;
+
+  if (isOpen) {
+    chevron.classList.remove('open');
+    dsList.classList.add('collapsed');
+    dsList.style.maxHeight = '0';
+    header.classList.remove('active-lib');
+    if (desc) desc.style.display = 'none';
+  } else {
+    chevron.classList.add('open');
+    dsList.classList.remove('collapsed');
+    dsList.style.maxHeight = dsList.scrollHeight + 10 + 'px';
+    header.classList.add('active-lib');
+    if (desc) desc.style.display = '';
+  }
+}
+
+async function showDataset(libref, name) {
+  // Highlight in sidebar
+  document.querySelectorAll('.ds-item').forEach(el => {
+    el.classList.toggle('active',
+      el.dataset.libref === libref && el.dataset.name === name);
+  });
+
+  // Switch to data tab
+  switchTab('data');
+
+  const dataEl = document.getElementById('tab-data');
+  dataEl.innerHTML = '<div class="data-empty">Loading...</div>';
+
+  try {
+    const data = await apiGetDataset(libref, name);
+    renderDataTable(data);
+  } catch (e) {
+    dataEl.innerHTML = `<div class="data-empty">Error: ${e.message}</div>`;
+  }
+}
+
+function renderDataTable(data) {
+  const dataEl = document.getElementById('tab-data');
+  const cols = data.columns || [];
+  const rows = data.rows || [];
+
+  if (cols.length === 0 && rows.length === 0) {
+    dataEl.innerHTML = `
+      <div class="data-info">${escapeHtml(data.libref)}.${escapeHtml(data.name)} — 0 rows, 0 columns</div>
+      <div class="data-empty">Empty dataset</div>`;
+    return;
+  }
+
+  let html = `<div class="data-info">${escapeHtml(data.libref)}.${escapeHtml(data.name)} — ${escapeHtml(String(data.total_rows))} rows, ${cols.length} columns</div>`;
+  html += '<table class="data-table"><thead><tr><th class="row-num">#</th>';
+  html += cols.map(c => `<th>${escapeHtml(c.name)}<br><span style="font-weight:400;font-size:10px;color:var(--text-dim)">${escapeHtml(c.type)}</span></th>`).join('');
+  html += '</tr></thead><tbody>';
+
+  rows.forEach((row, i) => {
+    html += `<tr><td class="row-num">${i + 1}</td>`;
+    html += cols.map(c => {
+      const v = row[c.name];
+      return `<td>${v === null || v === undefined ? '<span style="color:var(--text-dim)">.</span>' : escapeHtml(String(v))}</td>`;
+    }).join('');
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  dataEl.innerHTML = html;
+}
+
+async function deleteDS(libref, name) {
+  if (!confirm(`Delete ${libref}.${name}?`)) return;
+  await apiDeleteDataset(libref, name);
+  refreshLibraries();
+  // Clear data view if this dataset was shown
+  const dataEl = document.getElementById('tab-data');
+  dataEl.innerHTML = '<div class="data-empty">Dataset deleted</div>';
+}
+
+// ── Tabs ──
+
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tabName);
+  });
+  document.getElementById('tab-output').style.display = tabName === 'output' ? '' : 'none';
+  document.getElementById('tab-data').style.display = tabName === 'data' ? '' : 'none';
+}
+
+// ── Editor helpers ──
+
+function clearEditor() {
+  document.getElementById('editor').value = '';
+  document.getElementById('editor').focus();
+}
+
+const EXAMPLES = {
+basic: `/* Basic DATA Step + PROC PRINT */
+DATA employees;
+  INPUT name $ salary dept $;
+  DATALINES;
+  Alice 50000 HR
+  Bob 60000 IT
+  Charlie 55000 Sales
+  David 48000 HR
+  Eve 72000 IT
+  ;
+RUN;
+
+PROC PRINT DATA=employees; RUN;
+
+PROC MEANS DATA=employees;
+  VAR salary;
+RUN;
+
+PROC FREQ DATA=employees;
+  TABLES dept;
+RUN;`,
+
+sql: `/* PROC SQL — 查询、聚合、JOIN */
+DATA employees;
+  INPUT name $ salary dept_id;
+  DATALINES;
+  Alice 50000 10
+  Bob 60000 20
+  Charlie 55000 10
+  David 48000 30
+  Eve 72000 20
+  ;
+RUN;
+
+DATA departments;
+  INPUT dept_id dept_name $;
+  DATALINES;
+  10 Engineering
+  20 Marketing
+  30 HR
+  ;
+RUN;
+
+/* 基本查询 → CREATE TABLE */
+PROC SQL;
+  CREATE TABLE filtered AS
+  SELECT name, salary FROM employees WHERE salary > 52000;
+QUIT;
+
+/* GROUP BY + 聚合 */
+PROC SQL;
+  CREATE TABLE dept_stats AS
+  SELECT dept_id, COUNT(*) AS n, AVG(salary) AS avg_sal
+  FROM employees
+  GROUP BY dept_id
+  HAVING COUNT(*) >= 2;
+QUIT;
+
+/* JOIN */
+PROC SQL;
+  CREATE TABLE joined AS
+  SELECT e.name, e.salary, d.dept_name
+  FROM employees e
+  LEFT JOIN departments d ON e.dept_id = d.dept_id;
+QUIT;
+
+/* CREATE TABLE */
+PROC SQL;
+  CREATE TABLE high_salary AS
+  SELECT * FROM employees WHERE salary >= 55000;
+QUIT;
+
+PROC PRINT DATA=high_salary; RUN;`,
+
+case_when: `/* CASE WHEN 表达式 */
+DATA employees;
+  INPUT name $ salary dept $;
+  DATALINES;
+  Alice 50000 HR
+  Bob 60000 IT
+  Charlie 55000 Sales
+  David 48000 HR
+  Eve 72000 IT
+  ;
+RUN;
+
+/* CASE WHEN 在 SQL 中 */
+PROC SQL;
+  CREATE TABLE case_result AS
+  SELECT name, salary,
+    CASE
+      WHEN salary >= 70000 THEN 'High'
+      WHEN salary >= 55000 THEN 'Medium'
+      ELSE 'Low'
+    END AS salary_level,
+    CASE dept
+      WHEN 'IT' THEN 'Technology'
+      WHEN 'HR' THEN 'Human Resources'
+      ELSE 'Other'
+    END AS dept_full
+  FROM employees;
+QUIT;
+
+/* CASE WHEN + GROUP BY */
+PROC SQL;
+  CREATE TABLE level_stats AS
+  SELECT
+    CASE
+      WHEN salary >= 60000 THEN 'Senior'
+      ELSE 'Junior'
+    END AS level,
+    COUNT(*) AS n,
+    AVG(salary) AS avg_sal
+  FROM employees
+  GROUP BY
+    CASE
+      WHEN salary >= 60000 THEN 'Senior'
+      ELSE 'Junior'
+    END;
+QUIT;`,
+
+like_between: `/* LIKE / BETWEEN / IS NULL */
+DATA employees;
+  INPUT name $ salary email $;
+  DATALINES;
+  Alice 50000 alice@co.com
+  Bob 60000 .
+  Charlie 55000 charlie@co.com
+  David 48000 .
+  Eve 72000 eve@co.com
+  ;
+RUN;
+
+/* LIKE — 模式匹配 */
+PROC SQL;
+  CREATE TABLE like_a AS
+  SELECT * FROM employees
+  WHERE name LIKE 'A%';
+QUIT;
+
+/* NOT LIKE */
+PROC SQL;
+  CREATE TABLE not_like_e AS
+  SELECT * FROM employees
+  WHERE name NOT LIKE '%e';
+QUIT;
+
+/* _ 通配符匹配单个字符 */
+PROC SQL;
+  CREATE TABLE like_underscore AS
+  SELECT * FROM employees
+  WHERE name LIKE '_o%';
+QUIT;
+
+/* BETWEEN — 范围查询 */
+PROC SQL;
+  CREATE TABLE between_range AS
+  SELECT * FROM employees
+  WHERE salary BETWEEN 50000 AND 60000;
+QUIT;
+
+/* IS NULL / IS NOT NULL */
+PROC SQL;
+  CREATE TABLE null_emails AS
+  SELECT * FROM employees
+  WHERE email IS NULL;
+QUIT;
+
+PROC SQL;
+  CREATE TABLE not_null_emails AS
+  SELECT * FROM employees
+  WHERE email IS NOT NULL;
+QUIT;`,
+
+lag_dif: `/* LAG / DIF 函数 — 时间序列分析 */
+DATA series;
+  INPUT date $ value;
+  DATALINES;
+  Day1 100
+  Day2 105
+  Day3 103
+  Day4 110
+  Day5 108
+  Day6 115
+  ;
+RUN;
+
+/* LAG — 获取前 n 个值 */
+DATA with_lag;
+  SET series;
+  prev1 = LAG(value);
+  prev2 = LAG2(value);
+RUN;
+PROC PRINT DATA=with_lag; RUN;
+
+/* DIF — 差分 (当前值 - 前值) */
+DATA with_dif;
+  SET series;
+  change = DIF(value);
+  change2 = DIF2(value);
+RUN;
+PROC PRINT DATA=with_dif; RUN;
+
+/* 配合 _N_ 和 RETAIN 做累计 */
+DATA cumulative;
+  SET series;
+  RETAIN running_total 0;
+  running_total = running_total + value;
+  row_num = _N_;
+RUN;
+PROC PRINT DATA=cumulative; RUN;`,
+
+proc_means: `/* PROC MEANS — 分组统计 + 输出 */
+DATA employees;
+  INPUT name $ salary dept $ region $;
+  DATALINES;
+  Alice 50000 HR East
+  Bob 60000 IT West
+  Charlie 55000 Sales East
+  David 48000 HR West
+  Eve 72000 IT East
+  Frank 58000 Sales West
+  ;
+RUN;
+
+/* 基本统计 */
+PROC MEANS DATA=employees;
+  VAR salary;
+RUN;
+
+/* 指定统计量 */
+PROC MEANS DATA=employees N MEAN SUM MIN MAX STD;
+  VAR salary;
+RUN;
+
+/* CLASS 分组统计 */
+PROC MEANS DATA=employees N MEAN MAXDEC=2;
+  VAR salary;
+  CLASS dept;
+RUN;
+
+/* 多级 CLASS */
+PROC MEANS DATA=employees N MEAN SUM MAXDEC=0;
+  VAR salary;
+  CLASS dept region;
+RUN;
+
+/* OUT= 输出到数据集 */
+PROC MEANS DATA=employees OUT=summary;
+  VAR salary;
+  CLASS dept;
+RUN;
+PROC PRINT DATA=summary; RUN;`,
+
+proc_print_by: `/* PROC PRINT BY 分组 + SUM 汇总 */
+DATA sales;
+  INPUT region $ product $ amount;
+  DATALINES;
+  East Apple 100
+  East Banana 80
+  East Cherry 60
+  West Apple 120
+  West Banana 90
+  West Cherry 70
+  East Apple 110
+  West Banana 95
+  ;
+RUN;
+
+/* 先按 region 排序 */
+PROC SORT DATA=sales OUT=sorted;
+  BY region;
+RUN;
+
+/* BY 分组显示 */
+PROC PRINT DATA=sorted;
+  BY region;
+RUN;
+
+/* BY + SUM 汇总 */
+PROC PRINT DATA=sorted;
+  BY region;
+  SUM amount;
+RUN;
+
+/* 也可以按多字段分组 */
+PROC SORT DATA=sales OUT=sorted2;
+  BY region product;
+RUN;
+PROC PRINT DATA=sorted2;
+  BY region product;
+  SUM amount;
+RUN;`,
+
+libname: `/* LIBNAME — 外部库引用 */
+
+/* 注意：请将路径修改为你本机存在的目录 */
+/* LIBNAME mylib "C:/data"; */
+
+/* 使用 SQL CREATE TABLE 存入 WORK 库演示 */
+DATA employees;
+  INPUT name $ salary dept $;
+  DATALINES;
+  Alice 50000 HR
+  Bob 60000 IT
+  Charlie 55000 Sales
+  ;
+RUN;
+
+PROC SQL;
+  CREATE TABLE summary AS
+  SELECT dept, COUNT(*) AS n, AVG(salary) AS avg_sal
+  FROM employees
+  GROUP BY dept;
+QUIT;
+
+PROC PRINT DATA=summary; RUN;
+
+/* LIBNAME 使用方式：
+   LIBNAME mylib "C:/mydata";
+   PROC PRINT DATA=mylib.employees; RUN;
+   PROC SQL;
+     CREATE TABLE mylib.output AS
+     SELECT * FROM employees;
+   QUIT;
+   LIBNAME mylib;   清除库引用
+*/`,
+
+macro: `/* 宏系统 — %LET, %MACRO, %IF */
+%LET threshold = 55000;
+%LET dataset = employees;
+%LET show_high = YES;
+
+DATA employees;
+  INPUT name $ salary dept $;
+  DATALINES;
+  Alice 50000 HR
+  Bob 60000 IT
+  Charlie 55000 Sales
+  David 48000 HR
+  Eve 72000 IT
+  ;
+RUN;
+
+/* 使用宏变量过滤 */
+DATA high_earners;
+  SET &dataset;
+  IF salary > &threshold;
+RUN;
+PROC PRINT DATA=high_earners; RUN;
+
+/* 宏定义 */
+%MACRO summarize(ds, var);
+  PROC MEANS DATA=&ds N MEAN SUM;
+    VAR &var;
+  RUN;
+  PROC FREQ DATA=&ds;
+    TABLES dept;
+  RUN;
+%MEND;
+
+%summarize(employees, salary);
+
+/* %IF 宏条件编译 */
+%IF &show_high = YES %THEN %DO;
+  PROC SQL;
+    CREATE TABLE high_earners_sql AS
+    SELECT name, salary FROM employees
+    WHERE salary > &threshold;
+  QUIT;
+%END;`,
+
+full: `/* ═══ SASLite Full Demo ═══ */
+/* 1. 创建数据 */
+DATA employees;
+  INPUT name $ salary dept $ manager $;
+  DATALINES;
+  Alice 50000 HR .
+  Bob 60000 IT Alice
+  Charlie 55000 Sales Alice
+  David 48000 HR Bob
+  Eve 72000 IT Bob
+  Frank 58000 Sales Charlie
+  ;
+RUN;
+
+/* 2. 基本查看 */
+PROC PRINT DATA=employees; RUN;
+PROC MEANS DATA=employees N MEAN SUM STD MAXDEC=0;
+  VAR salary;
+RUN;
+
+/* 3. SQL 查询 + CASE WHEN */
+PROC SQL;
+  CREATE TABLE leveled AS
+  SELECT name, salary, dept,
+    CASE
+      WHEN salary >= 60000 THEN 'Senior'
+      ELSE 'Junior'
+    END AS level
+  FROM employees
+  WHERE manager IS NOT NULL
+  ORDER BY salary DESC;
+QUIT;
+
+/* 4. COUNT(*) 分组统计 + HAVING */
+PROC SQL;
+  CREATE TABLE dept_sql_summary AS
+  SELECT dept,
+    COUNT(*) AS headcount,
+    AVG(salary) AS avg_salary,
+    SUM(salary) AS total_cost
+  FROM employees
+  GROUP BY dept
+  HAVING COUNT(*) >= 2;
+QUIT;
+
+/* 5. PROC MEANS 分组 + 输出 */
+PROC MEANS DATA=employees OUT=dept_summary N MEAN SUM MAXDEC=0;
+  VAR salary;
+  CLASS dept;
+RUN;
+PROC PRINT DATA=dept_summary; RUN;
+
+/* 6. 排序 + BY 分组显示 */
+PROC SORT DATA=employees OUT=sorted;
+  BY dept;
+RUN;
+PROC PRINT DATA=sorted;
+  VAR name salary;
+  BY dept;
+  SUM salary;
+RUN;
+
+/* 7. LIKE 过滤 */
+PROC SQL;
+  CREATE TABLE like_filter AS
+  SELECT * FROM employees
+  WHERE name LIKE 'A%' OR name LIKE '%e';
+QUIT;
+
+/* 8. DATA step 派生变量 */
+DATA enriched;
+  SET sorted;
+  bonus = salary * 0.1;
+  label = CATS(name, ' (', dept, ')');
+RUN;
+PROC PRINT DATA=enriched; RUN;`
+};
+
+function loadExample(key) {
+  if (!key) return;
+  const code = EXAMPLES[key];
+  if (code) {
+    document.getElementById('editor').value = code;
+    document.getElementById('editor').focus();
+  }
+  document.getElementById('exampleSelect').value = '';
+}
+
+// ── Resizer ──
+
+(function() {
+  const resizer = document.getElementById('resizer');
+  const editorPanel = document.getElementById('editorPanel');
+  let startY, startHeight;
+
+  resizer.addEventListener('mousedown', e => {
+    startY = e.clientY;
+    startHeight = editorPanel.offsetHeight;
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    e.preventDefault();
+  });
+
+  function onMouseMove(e) {
+    const newHeight = startHeight + (e.clientY - startY);
+    if (newHeight > 80 && newHeight < window.innerHeight - 200) {
+      editorPanel.style.height = newHeight + 'px';
+    }
+  }
+
+  function onMouseUp() {
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  }
+})();
+
+// ── Keyboard shortcut ──
+
+document.getElementById('editor').addEventListener('keydown', e => {
+  // Ctrl+Enter to run
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runCode();
+  }
+  // Tab to insert spaces
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const ta = e.target;
+    const start = ta.selectionStart;
+    ta.value = ta.value.substring(0, start) + '  ' + ta.value.substring(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = start + 2;
+  }
+});
+
+// ── Drag & Drop ──
+
+(function() {
+  const editorWrap = document.querySelector('.editor-wrap');
+  const overlay = document.getElementById('dropOverlay');
+  let dragCounter = 0;
+
+  editorWrap.addEventListener('dragenter', e => {
+    e.preventDefault();
+    dragCounter++;
+    overlay.classList.add('active');
+  });
+
+  editorWrap.addEventListener('dragleave', e => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      overlay.classList.remove('active');
+    }
+  });
+
+  editorWrap.addEventListener('dragover', e => {
+    e.preventDefault();
+  });
+
+  editorWrap.addEventListener('drop', async e => {
+    e.preventDefault();
+    dragCounter = 0;
+    overlay.classList.remove('active');
+
+    const files = e.dataTransfer.files;
+    if (files.length === 0) return;
+
+    const file = files[0];
+    const ext = file.name.split('.').pop().toLowerCase();
+
+    if (ext === 'sas') {
+      // Load .sas file into editor
+      const text = await file.text();
+      document.getElementById('editor').value = text;
+      document.getElementById('editor').focus();
+    } else if (['sas7bdat','xpt','csv','xlsx','xls'].includes(ext)) {
+      // Import data file
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await apiFetch('/api/upload-data', {method: 'POST', body: formData});
+        const result = await res.json();
+        if (result.success) {
+          refreshLibraries();
+          showDataset('WORK', result.dataset.split('.')[1]);
+          const outEl = document.getElementById('tab-output');
+          outEl.innerHTML = `<span class="success-line">Imported ${escapeHtml(result.dataset)} (${escapeHtml(String(result.rows))} rows, ${escapeHtml(String(result.columns))} columns)</span>`;
+        } else {
+          alert('Import failed: ' + result.error);
+        }
+      } catch (err) {
+        alert('Upload error: ' + err.message);
+      }
+    }
+  });
+})();
+
+// ── Utilities ──
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function escapeAttr(text) {
+  return escapeHtml(String(text)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function jsArg(value) {
+  return escapeAttr(JSON.stringify(String(value)));
+}
+
+function safeDatasetName(filename) {
+  let name = String(filename).split(/[\\/]/).pop().replace(/\.[^.]*$/, '').toUpperCase();
+  name = name.replace(/[^A-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  if (!name) name = 'DATA';
+  if (!/^[A-Z_]/.test(name)) name = `_${name}`;
+  return name.slice(0, 32);
+}
+
+// ── Init ──
+
+refreshLibraries();
+</script>
+</body>
+</html>

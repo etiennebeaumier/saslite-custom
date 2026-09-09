@@ -1,0 +1,31 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.13']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m unittest discover -s saslite_custom -p 'test_*.py' -v
+      - run: python saslite_custom/build_wheel.py
+      - run: python -m twine check dist/*
+      - name: Verify installed wheel outside source checkout
+        run: |
+          python -m venv /tmp/saslite-wheel
+          /tmp/saslite-wheel/bin/python -m pip install dist/*.whl
+          cd /tmp
+          /tmp/saslite-wheel/bin/saslite-custom help
+          /tmp/saslite-wheel/bin/saslite-custom -e 'data demo; x=42; run; proc print data=demo; run;'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions-python-${{ matrix.python }}
+          path: dist/*

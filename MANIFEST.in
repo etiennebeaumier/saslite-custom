@@ -1,0 +1,5 @@
+include AGENTS.md CONTRIBUTING.md CHANGELOG.md
+recursive-include saslite_custom *.py *.json *.md *.sas
+recursive-include examples *.sas *.py
+recursive-include docs *.md
+prune saslite_custom/fixtures/course

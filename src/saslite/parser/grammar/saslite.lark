@@ -1,0 +1,638 @@
+// SASLite combined grammar — single-file, all rules
+// Uses Earley parser for robustness with SAS's ambiguity
+
+start: (statement)*
+
+statement: data_step
+         | proc_sql
+         | proc_print
+         | proc_sort
+         | proc_contents
+         | proc_means
+         | proc_freq
+         | proc_import
+         | proc_export
+         | proc_append
+         | proc_datasets
+         | proc_transpose
+         | proc_univariate
+         | proc_compare
+         | proc_copy
+         | proc_format
+         | proc_tabulate
+         | proc_report
+         | proc_reg
+         | proc_logistic
+         | proc_corr
+         | proc_ttest
+         | proc_npar1way
+         | libname_stmt ";"
+         | filename_stmt ";"
+         | options_stmt ";"
+         | ods_graphics_stmt ";"
+         | macro_let_stmt
+         | ";" -> empty_stmt
+
+// ─── Macro ────────────────────────────────────────
+
+macro_let_stmt: "%LET"i NAME "=" expr ";"
+
+// ─── Global statements ────────────────────────────
+
+libname_stmt: "LIBNAME"i NAME (NAME)? STRING? (libname_option)*
+
+libname_option: NAME "=" option_value
+              | NAME
+
+filename_stmt: "FILENAME"i NAME STRING
+
+options_stmt: "OPTIONS"i option_item+
+ods_graphics_stmt: "ODS"i "GRAPHICS"i ("ON"i | "OFF"i)
+option_item: NAME "=" option_value
+           | NAME
+           | "NONUMBER"i
+           | "NODATE"i
+
+option_value: NAME | NUMBER | STRING
+
+// ─── DATA step ────────────────────────────────────
+
+data_step: "DATA"i dataset_target ("," dataset_target)* ";" data_stmt* "RUN"i ";"
+
+dataset_target: qualified_name
+              | "_NULL_"i
+
+qualified_name: NAME "." NAME
+              | NAME
+
+data_stmt: set_stmt ";"
+         | merge_stmt ";"
+         | update_data_stmt ";"
+         | by_stmt ";"
+         | array_stmt ";"
+         | infile_stmt ";"
+         | input_stmt ";"
+         | assign_stmt ";"
+         | arr_assign_stmt ";"
+         | sum_stmt ";"
+         | substr_assign_stmt ";"
+         | if_stmt
+         | do_block
+         | select_when_block
+         | output_stmt ";"
+         | delete_stmt ";"
+         | stop_stmt ";"
+         | retain_stmt ";"
+         | where_stmt ";"
+         | keep_stmt ";"
+         | drop_stmt ";"
+         | rename_stmt ";"
+         | format_stmt ";"
+         | label_stmt ";"
+         | length_stmt ";"
+         | attrib_stmt ";"
+         | put_stmt ";"
+         | call_stmt ";"
+
+output_stmt: "OUTPUT"i (qualified_name)?
+delete_stmt: "DELETE"i
+stop_stmt: "STOP"i
+
+set_stmt: "SET"i (dataset_ref)+
+merge_stmt: "MERGE"i (dataset_ref)+
+by_stmt: "BY"i ("DESCENDING"i)? NAME (("DESCENDING"i)? NAME)*
+array_stmt: "ARRAY"i NAME "[" NUMBER "]" ("$")? (NUMBER)? (name_list)? ("(" expr_list ")")?
+infile_stmt: "INFILE"i (NAME | STRING) (infile_option)*
+infile_option: NAME ("=" (STRING | NAME | NUMBER))?
+input_stmt: "INPUT"i (input_var)* ("$")?
+input_var: NAME input_format NUMBER "-" NUMBER -> input_var_colrange_fmt
+         | NAME "$"? NUMBER "-" NUMBER -> input_var_colrange
+         | NAME "$"? NUMBER -> input_var_colsingle
+         | NAME "$" NUMBER "." -> input_var_charfmt
+         | "$"? NAME (":" input_format)?
+input_format: "$"? (NAME | NUMBER) ("." (NAME | NUMBER)?)?
+dataset_ref: qualified_name ("(" (dataset_option)* ")")?
+dataset_option: "KEEP"i "=" name_list
+              | "DROP"i "=" name_list
+              | "WHERE"i "=" "(" expr ")"
+              | "RENAME"i "=" "(" (rename_pair)+ ")"
+
+assign_stmt: NAME "=" expr
+arr_assign_stmt: NAME "[" expr "]" "=" expr
+sum_stmt: NAME "+" expr
+
+if_stmt: IF_KW expr THEN_KW data_stmt (ELSE_KW data_stmt)?
+       | IF_KW expr ";" (data_stmt)* ELSE_KW ";"? (data_stmt)*
+       | IF_KW expr ";" -> if_subsetting
+
+do_block: "DO"i ";" (data_stmt)* "END"i ";"
+        | "DO"i NAME "=" expr "TO"i expr ("BY"i expr)? ";" (data_stmt)* "END"i ";"
+        | "DO"i "WHILE"i "(" expr ")" ";" (data_stmt)* "END"i ";"
+        | "DO"i "UNTIL"i "(" expr ")" ";" (data_stmt)* "END"i ";"
+
+select_when_block: "SELECT"i ("(" expr ")")? ";" (when_clause)* (otherwise_clause)? "END"i ";"
+when_clause: "WHEN"i "(" expr_list ")" data_stmt
+otherwise_clause: "OTHERWISE"i data_stmt
+
+retain_stmt: "RETAIN"i (retain_item)+
+retain_item: NAME ("=" expr)?
+             | NAME expr
+
+where_stmt: "WHERE"i expr
+keep_stmt: "KEEP"i name_list
+drop_stmt: "DROP"i name_list
+rename_stmt: "RENAME"i (rename_pair)+
+rename_pair: NAME "=" NAME
+format_stmt: "FORMAT"i (format_group)+
+format_group: NAME+ format_spec
+label_stmt: "LABEL"i (label_item)+
+label_item: NAME "=" STRING
+
+update_data_stmt: "UPDATE"i (dataset_ref)+
+
+substr_assign_stmt: "SUBSTR"i "(" NAME "," expr ("," expr)? ")" "=" expr
+
+length_stmt: "LENGTH"i (length_item)+
+length_item: NAME "$"? NUMBER?
+
+attrib_stmt: "ATTRIB"i (attrib_item)+
+attrib_item: NAME (attr_tag)*
+attr_tag: "FORMAT"i "="? format_spec | "LABEL"i "="? STRING | "LENGTH"i "="? NUMBER | "INFORMAT"i "="? NAME
+format_spec: "$"? NAME ("." NUMBER?)? | "$"? NUMBER ("." NUMBER?)?
+
+put_stmt: "PUT"i (put_item)+
+put_item: STRING | NAME | put_format
+put_format: NAME ("." NUMBER?)?
+
+call_stmt: "CALL"i NAME "(" expr_list ")"
+
+// ─── PROC SQL ─────────────────────────────────────
+
+proc_sql: "PROC"i "SQL"i (sql_opt)* ";" (sql_stmt)+ ("QUIT"i ";")?
+
+sql_opt: "NOPRINT"i | "PRINT"i | "FEEDBACK"i
+
+sql_stmt: set_op_stmt ";"
+        | select_stmt ";"
+        | create_table_stmt ";"
+        | insert_stmt ";"
+        | update_sql_stmt ";"
+        | delete_sql_stmt ";"
+
+set_op_stmt: select_stmt set_op select_stmt (set_op select_stmt)*
+set_op: "UNION"i "ALL"i -> union_all
+      | "UNION"i -> union
+      | "INTERSECT"i "ALL"i -> intersect_all
+      | "INTERSECT"i -> intersect
+      | "EXCEPT"i "ALL"i -> except_all
+      | "EXCEPT"i -> except_op
+
+select_stmt: "SELECT"i ("DISTINCT"i)? select_list into_clause? from_clause? where_clause? group_by_clause? having_clause? order_by_clause?
+
+into_clause: "INTO"i into_var ("," into_var)*
+into_var: ":" NAME
+
+select_list: select_item ("," select_item)*
+select_item: expr ("AS"i NAME)? (col_attr)* -> select_aliased
+           | "*" -> select_star
+
+col_attr: "LENGTH"i "=" NUMBER
+        | "FORMAT"i "=" format_spec
+        | "LABEL"i "=" STRING
+
+from_clause: "FROM"i table_expr
+table_expr: table_factor (join_clause)*
+table_factor: qualified_name ("(" (dataset_option)* ")")? ("AS"i)? NAME? -> from_table
+            | "(" select_stmt ")" ("AS"i)? NAME? -> from_subquery
+
+join_clause: "LEFT"i "JOIN"i table_factor "ON"i expr  -> join_left
+           | "RIGHT"i "JOIN"i table_factor "ON"i expr -> join_right
+           | "FULL"i "JOIN"i table_factor "ON"i expr  -> join_full
+           | "CROSS"i "JOIN"i table_factor "ON"i expr -> join_cross
+           | "INNER"i "JOIN"i table_factor "ON"i expr -> join_inner
+           | "JOIN"i table_factor "ON"i expr           -> join_inner
+
+where_clause: "WHERE"i expr
+group_by_clause: "GROUP"i "BY"i expr ("," expr)*
+having_clause: "HAVING"i expr
+order_by_clause: "ORDER"i "BY"i order_item ("," order_item)*
+order_item: expr ("ASC"i | "DESC"i)?
+
+create_table_stmt: "CREATE"i "TABLE"i qualified_name "AS"i select_stmt
+insert_stmt: "INSERT"i "INTO"i qualified_name ("(" insert_col_list ")")? "VALUES"i "(" expr_list ")"
+            | "INSERT"i "INTO"i qualified_name select_stmt
+insert_col_list: NAME ("," NAME)*
+update_sql_stmt: "UPDATE"i qualified_name "SET"i sql_assign ("," sql_assign)* where_clause?
+sql_assign: NAME "=" expr
+delete_sql_stmt: "DELETE"i "FROM"i qualified_name where_clause?
+
+// ─── PROC PRINT ───────────────────────────────────
+
+proc_print: "PROC"i "PRINT"i ("DATA"i "=" qualified_name)? ";" (print_stmt)* "RUN"i ";"
+
+print_stmt: "VAR"i name_list ";"
+          | "ID"i name_list ";"
+          | "SUM"i name_list ";"
+          | "BY"i name_list ";"
+          | where_stmt ";"
+          | format_stmt ";"
+
+// ─── PROC SORT ────────────────────────────────────
+
+proc_sort: "PROC"i "SORT"i (sort_opt)* ";" sort_body "RUN"i ";"
+
+sort_opt: "DATA"i "=" dataset_ref
+        | "OUT"i "=" dataset_ref
+        | "NODUPKEY"i
+        | "NODUPRECS"i
+        | "FORCE"i
+
+sort_body: "BY"i ("DESCENDING"i)? NAME (("DESCENDING"i)? NAME)* ";"
+
+// ─── PROC CONTENTS ────────────────────────────────
+
+proc_contents: "PROC"i "CONTENTS"i (contents_opt)* ";" "RUN"i ";"
+
+contents_opt: "DATA"i "=" qualified_name
+            | "VARNUM"i
+            | "SHORT"i
+
+// ─── PROC MEANS / SUMMARY ─────────────────────────
+
+proc_means: "PROC"i ("MEANS"i | "SUMMARY"i) (means_opt)* ";" (means_stmt)* "RUN"i ";"
+
+means_opt: "DATA"i "=" qualified_name
+         | "OUT"i "=" qualified_name
+         | "NOPRINT"i
+         | "MAXDEC"i "=" NUMBER
+         | stat_name
+
+stat_name: "N"i | "MEAN"i | "SUM"i | "MIN"i | "MAX"i | "STD"i | "MEDIAN"i
+
+means_stmt: "VAR"i name_list ";"
+          | "CLASS"i name_list ";"
+          | "BY"i name_list ";"
+          | "OUTPUT"i ("OUT"i "=" qualified_name)? (means_output_kv)* ";"
+
+means_output_kv: NAME "=" NAME
+
+// ─── PROC FREQ ────────────────────────────────────
+
+proc_freq: "PROC"i "FREQ"i (freq_opt)* ";" freq_body "RUN"i ";"
+
+freq_opt: "DATA"i "=" qualified_name -> freq_opt_data
+        | "NOPRINT"i -> freq_opt_flag
+        | "NOROW"i -> freq_opt_flag
+        | "NOCOL"i -> freq_opt_flag
+        | "NOPERCENT"i -> freq_opt_flag
+        | "MISSING"i -> freq_opt_flag
+
+freq_body: freq_stmt+
+
+freq_stmt: freq_tables | freq_by
+
+freq_tables: "TABLES"i freq_table_spec ("," freq_table_spec)* ";"?
+
+freq_table_spec: qualified_name ("." qualified_name)? ("/" freq_opt+)? (( "*" qualified_name ("." qualified_name)?)+ ("/" freq_opt+)?)*
+
+freq_by: "BY"i name_list ";"?
+
+// ─── PROC APPEND ──────────────────────────────────
+
+proc_append: "PROC"i "APPEND"i (append_opt)* ";" "RUN"i ";"
+
+append_opt: "DATA"i "=" qualified_name
+          | "BASE"i "=" qualified_name
+
+// ─── PROC DATASETS ─────────────────────────────────
+
+proc_datasets: "PROC"i "DATASETS"i (ds_opt)* ";" (ds_stmt)* "QUIT"i ";"
+
+ds_opt: "LIBRARY"i "=" qualified_name
+
+ds_stmt: "DELETE"i name_list ";"
+       | "MODIFY"i qualified_name rename_stmt? ";"
+       | "CONTENTS"i ("DATA"i "=" qualified_name)? ";"
+
+// ─── PROC IMPORT ──────────────────────────────────
+
+proc_import: "PROC"i "IMPORT"i (import_opt)* ";" (import_stmt)* "RUN"i ";"
+
+import_opt: "DATAFILE"i "=" STRING
+          | "OUT"i "=" qualified_name
+          | "DBMS"i "=" NAME
+          | "GETNAMES"i "=" ("YES"i | "NO"i)
+          | "DELIMITER"i "=" STRING
+
+import_stmt: "DATAFILE"i "=" STRING ";"
+           | "OUT"i "=" qualified_name ";"
+           | "DBMS"i "=" NAME ";"
+           | "GETNAMES"i "=" ("YES"i | "NO"i) ";"
+           | "DELIMITER"i "=" STRING ";"
+
+// ─── PROC EXPORT ──────────────────────────────────
+
+proc_export: "PROC"i "EXPORT"i (export_opt)* ";" (export_stmt)* "RUN"i ";"
+
+export_opt: "DATA"i "=" qualified_name
+          | "OUTFILE"i "=" STRING
+          | "DBMS"i "=" NAME
+          | "DELIMITER"i "=" STRING
+
+export_stmt: "DATA"i "=" qualified_name ";"
+           | "OUTFILE"i "=" STRING ";"
+           | "DBMS"i "=" NAME ";"
+           | "DELIMITER"i "=" STRING ";"
+
+// ─── PROC TRANSPOSE ───────────────────────────────
+
+proc_transpose: "PROC"i "TRANSPOSE"i (transpose_opt)* ";" (transpose_stmt)* "RUN"i ";"
+
+transpose_opt: "DATA"i "=" qualified_name
+             | "OUT"i "=" qualified_name
+             | "PREFIX"i "=" NAME
+             | "NAME"i "=" NAME
+
+transpose_stmt: "VAR"i name_list ";" -> transpose_var
+              | "ID"i name_list ";" -> transpose_id
+              | "BY"i name_list ";" -> transpose_by
+
+// ─── PROC UNIVARIATE ──────────────────────────────
+
+proc_univariate: "PROC"i "UNIVARIATE"i (univariate_opt)* ";" (univariate_stmt)* "RUN"i ";"
+
+univariate_opt: "DATA"i "=" qualified_name
+              | "NOPRINT"i
+
+univariate_stmt: "VAR"i name_list ";" -> univariate_var
+               | "BY"i name_list ";" -> univariate_by
+
+// ─── PROC COMPARE ─────────────────────────────────
+
+proc_compare: "PROC"i "COMPARE"i (compare_opt)* ";" (compare_stmt)* "RUN"i ";"
+
+compare_opt: "BASE"i "=" qualified_name
+           | "COMPARE"i "=" qualified_name
+           | "OUT"i "=" qualified_name
+           | "LISTVAR"i
+           | "BRIEF"i
+
+compare_stmt: "VAR"i name_list ";" -> compare_var
+            | "ID"i name_list ";" -> compare_id
+
+// ─── PROC COPY ────────────────────────────────────
+
+proc_copy: "PROC"i "COPY"i (copy_opt)* ";" (copy_stmt)* "RUN"i ";"
+
+copy_opt: "IN"i "=" NAME
+        | "OUT"i "=" NAME
+
+copy_stmt: "SELECT"i name_list ";" -> copy_select
+         | "EXCLUDE"i name_list ";" -> copy_exclude
+
+// ─── PROC FORMAT ──────────────────────────────────
+
+proc_format: "PROC"i "FORMAT"i (format_proc_opt)* ";" (value_stmt)* "RUN"i ";"
+
+format_proc_opt: "LIBRARY"i "=" qualified_name
+
+value_stmt: "VALUE"i "$"? NAME (value_range)+ ";"
+
+value_range: value_key ("," value_key)* "=" STRING
+value_key: NUMBER "-" NUMBER -> value_key_range
+         | "LOW"i "-" NUMBER -> value_key_low
+         | NUMBER "-" "HIGH"i -> value_key_high
+         | "OTHER"i -> value_key_other
+         | NUMBER -> value_key_num
+         | STRING -> value_key_str
+
+// ─── PROC TABULATE ────────────────────────────────
+
+proc_tabulate: "PROC"i "TABULATE"i (tabulate_opt)* ";" (tabulate_stmt)* "RUN"i ";"
+
+tabulate_opt: "DATA"i "=" qualified_name
+
+tabulate_stmt: "CLASS"i name_list ";" -> tabulate_class
+             | "VAR"i name_list ";" -> tabulate_var
+             | "TABLE"i tabulate_expr ";" -> tabulate_table
+
+tabulate_expr: tabulate_term ("," tabulate_term)*
+tabulate_term: NAME ("*" NAME)*
+
+// ─── PROC REPORT ──────────────────────────────────
+
+proc_report: "PROC"i "REPORT"i (report_opt)* ";" (report_stmt)* "RUN"i ";"
+
+report_opt: "DATA"i "=" qualified_name
+          | "OUT"i "=" qualified_name
+          | "NOWD"i
+          | "HEADLINE"i
+
+report_stmt: "COLUMN"i name_list ";" -> report_column
+           | "COLUMNS"i name_list ";" -> report_column
+           | "DEFINE"i NAME "/" (report_def_attr)* ";" -> report_define
+           | "BY"i name_list ";" -> report_by
+
+report_def_attr: "GROUP"i | "ANALYSIS"i | "DISPLAY"i | "ORDER"i | "SUM"i | "MEAN"i | "MIN"i | "MAX"i | "N"i | STRING | "FORMAT"i "=" format_spec | "WIDTH"i "=" NUMBER
+
+// ─── PROC REG ─────────────────────────────────────
+
+proc_reg: "PROC"i "REG"i (reg_opt)* ";" (reg_stmt)* ("RUN"i ";")? ("QUIT"i ";")?
+
+reg_opt: "DATA"i "=" qualified_name
+       | "OUTEST"i "=" qualified_name
+       | "NOPRINT"i
+
+reg_stmt: "MODEL"i NAME "=" name_list ("/" (model_opt)*)? ";" -> reg_model
+        | "BY"i name_list ";" -> reg_by
+        | "OUTPUT"i (output_kv)* ";" -> reg_output
+
+model_opt: "NOINT"i | NAME "=" NAME | NAME
+output_kv: "OUT"i "=" qualified_name
+         | "P"i "=" NAME
+         | "PREDICTED"i "=" NAME
+         | "R"i "=" NAME
+         | "RESIDUAL"i "=" NAME
+
+// ─── PROC LOGISTIC ────────────────────────────────
+
+proc_logistic: "PROC"i "LOGISTIC"i (logistic_opt)* ";" (logistic_stmt)* ("RUN"i ";")? ("QUIT"i ";")?
+
+logistic_opt: "DATA"i "=" qualified_name
+            | "DESCENDING"i
+            | "DESC"i
+            | "OUTEST"i "=" qualified_name
+            | "NOPRINT"i
+            | "ALPHA"i "=" NUMBER
+
+logistic_stmt: "MODEL"i NAME ("(" "EVENT"i "=" STRING ")")? "=" name_list? ("/" (model_opt)*)? ";" -> logistic_model
+             | "CLASS"i name_list ("/" (class_opt)*)? ";" -> logistic_class
+             | "ODDSRATIO"i name_list? ("/" (oddsratio_opt)*)? ";" -> logistic_oddsratio
+             | "BY"i name_list ";" -> logistic_by
+             | "OUTPUT"i (output_kv)* ";" -> logistic_output
+
+class_opt: "REF"i "=" STRING | "PARAM"i "=" NAME | NAME
+oddsratio_opt: "AT"i NAME "=" NUMBER | "ALPHA"i "=" NUMBER | NAME
+
+// ─── PROC CORR ────────────────────────────────────────
+
+proc_corr: "PROC"i "CORR"i (corr_opt)* ";" (corr_stmt)* ("RUN"i ";")? ("QUIT"i ";")?
+
+corr_opt: "DATA"i "=" qualified_name
+        | "OUTP"i "=" qualified_name
+        | "PEARSON"i
+        | "SPEARMAN"i
+        | "KENDALL"i
+        | "NOPROB"i
+        | "NOSIMPLE"i
+
+corr_stmt: "VAR"i name_list ";" -> corr_var
+
+// ─── PROC TTEST ────────────────────────────────────────
+
+proc_npar1way: "PROC"i "NPAR1WAY"i (npar1way_opt)* ";" (npar1way_stmt)* ("RUN"i ";")? ("QUIT"i ";")?
+npar1way_opt: "DATA"i "=" qualified_name
+            | "WILCOXON"i
+            | "MWW"i
+            | "FP"i
+            | "FP"i "(" "REFCLASS"i "=" (NUMBER | STRING) ")" -> npar1way_fp
+            | "NOPRINT"i
+            | "CORRECT"i "=" NAME
+            | "PLOTS"i "=" NAME
+            | "PLOTS"i "=" "(" NAME+ ")" -> ttest_plots
+npar1way_stmt: "VAR"i name_list ";" -> ttest_var
+             | "CLASS"i name_list ";" -> ttest_class
+
+proc_ttest: "PROC"i "TTEST"i (ttest_opt)* ";" (ttest_stmt)* ("RUN"i ";")? ("QUIT"i ";")?
+
+ttest_opt: "DATA"i "=" qualified_name
+         | "H0"i "=" NUMBER
+         | "ALPHA"i "=" NUMBER
+         | "NOPRINT"i
+         | "PLOTS"i "=" NAME -> ttest_plots
+         | "PLOTS"i "=" "(" NAME+ ")" -> ttest_plots
+
+ttest_stmt: "VAR"i name_list ";" -> ttest_var
+          | "CLASS"i name_list ";" -> ttest_class
+          | "PAIRED"i NAME "*" NAME ";" -> ttest_paired
+
+// ─── Expressions ──────────────────────────────────
+
+?or_expr: and_expr
+        | or_expr "OR"i and_expr -> binop
+
+?and_expr: not_expr
+         | and_expr "AND"i not_expr -> binop
+
+?not_expr: compare_expr
+         | "NOT"i not_expr -> unaryop
+
+?compare_expr: concat_expr
+             | compare_expr "=" concat_expr -> binop
+             | compare_expr EQ_OP concat_expr -> binop
+             | compare_expr "NE"i concat_expr -> binop
+             | compare_expr "<>" concat_expr -> binop
+             | compare_expr "^=" concat_expr -> binop
+             | compare_expr "~=" concat_expr -> binop
+             | compare_expr ">" concat_expr -> binop
+             | compare_expr GT_OP concat_expr -> binop
+             | compare_expr ">=" concat_expr -> binop
+             | compare_expr GE_OP concat_expr -> binop
+             | compare_expr "<" concat_expr -> binop
+             | compare_expr LT_OP concat_expr -> binop
+             | compare_expr "<=" concat_expr -> binop
+             | compare_expr LE_OP concat_expr -> binop
+             | compare_expr "IN"i "(" select_stmt ")" -> in_subquery
+             | compare_expr "NOT"i "IN"i "(" select_stmt ")" -> not_in_subquery
+             | compare_expr "IN"i "(" expr_list ")" -> in_list
+             | compare_expr "NOT"i "IN"i "(" expr_list ")" -> not_in_list
+             | compare_expr "NOT"i "LIKE"i concat_expr -> not_like_op
+             | compare_expr "LIKE"i concat_expr -> like_op
+             | compare_expr "NOT"i "BETWEEN"i concat_expr "AND"i concat_expr -> not_between_op
+             | compare_expr "BETWEEN"i concat_expr "AND"i concat_expr -> between_op
+             | compare_expr "IS"i "NOT"i "NULL"i -> is_not_null
+             | compare_expr "IS"i "NULL"i -> is_null
+             | "NOT"i "EXISTS"i "(" select_stmt ")" -> not_exists_expr
+             | "EXISTS"i "(" select_stmt ")" -> exists_expr
+
+?concat_expr: add_expr
+            | concat_expr "||" add_expr -> binop
+
+?add_expr: mul_expr
+         | add_expr "+" mul_expr -> binop
+         | add_expr "-" mul_expr -> binop
+
+?mul_expr: pow_expr
+         | mul_expr "*" pow_expr -> binop
+         | mul_expr "/" pow_expr -> binop
+
+?pow_expr: unary_expr
+         | pow_expr "**" unary_expr -> binop
+
+?unary_expr: primary
+           | "-" unary_expr -> unaryop
+           | "+" unary_expr -> unaryop
+
+?primary: NUMBER -> number
+        | DATE_LITERAL -> date_literal
+        | STRING -> string
+        | "NULL"i -> null_val
+        | "CALCULATED"i NAME -> calculated_ref
+        | window_func
+        | NAME "(" func_args? ")" -> func_call
+        | case_expr
+        | arr_ref
+        | "(" select_stmt ")" -> scalar_subquery
+        | qualified_name
+        | NAME -> name
+        | "(" or_expr ")"
+
+window_func: NAME "(" func_args? ")" "OVER"i "(" window_spec ")"
+window_spec: ("PARTITION"i "BY"i window_name_list)? ("ORDER"i "BY"i window_order_item ("," window_order_item)*)?
+window_name_list: NAME ("," NAME)*
+window_order_item: NAME ("ASC"i | "DESC"i)?
+
+arr_ref: NAME "[" or_expr "]"
+
+case_expr: "CASE"i expr? (case_when)+ ("ELSE"i expr)? "END"i
+case_when: "WHEN"i expr "THEN"i expr
+
+expr_list: expr ("," expr)*
+func_args: func_arg ("," func_arg)*
+func_arg: "*" -> star_arg
+        | "DISTINCT"i expr -> distinct_arg
+        | "OF"i NAME "[" "*" "]" -> of_array_arg
+        | expr -> expr_arg
+?expr: or_expr
+
+name_list: NAME+
+
+// ─── SQL column attributes ──────────────────────────
+
+// These appear in SELECT items after the expression/alias:
+//   expr AS name LENGTH=40 FORMAT=date9. LABEL='foo'
+
+// ─── Terminals ───────────────────────────────────
+
+NAME: /[A-Za-z_][A-Za-z0-9_]*/
+IF_KW.3: /IF(?![A-Za-z0-9_])/i
+THEN_KW.3: /THEN(?![A-Za-z0-9_])/i
+ELSE_KW.3: /ELSE(?![A-Za-z0-9_])/i
+EQ_OP: /EQ(?![A-Za-z0-9_])/i
+GT_OP: /GT(?![A-Za-z0-9_])/i
+GE_OP: /GE(?![A-Za-z0-9_])/i
+LT_OP: /LT(?![A-Za-z0-9_])/i
+LE_OP: /LE(?![A-Za-z0-9_])/i
+NUMBER: /[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?|\.[0-9]+([eE][+-]?[0-9]+)?/
+DATE_LITERAL.2: /("[^"]*"|'[^']*')(dt|d|t)\b/i
+STRING: /"[^"]*"|'[^']*'/
+
+// ─── Comments ─────────────────────────────────────
+
+COMMENT: /(?m)^[ \t]*\*[^;]*;/
+%ignore COMMENT
+
+// ─── Whitespace ───────────────────────────────────
+
+%import common.WS
+%ignore WS
