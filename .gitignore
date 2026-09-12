@@ -11,3 +11,6 @@ dist/
 saslite_custom/fixtures/course/
 *.sas7bdat
 *.xpt
+
+# Generated default graph output
+graphs/

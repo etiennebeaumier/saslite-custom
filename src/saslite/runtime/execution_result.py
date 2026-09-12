@@ -16,6 +16,7 @@ class StepResult:
     output_messages: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    image_paths: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -30,7 +31,13 @@ class RunSummary:
     def total_steps(self) -> int:
         return len(self.steps)
 
+    @property
+    def image_paths(self) -> list[str]:
+        return [path for step in self.steps for path in step.image_paths]
+
     def add_step(self, result: StepResult) -> None:
         self.steps.append(result)
         if not result.success:
             self.success = False
+            if self.error is None:
+                self.error = result.error

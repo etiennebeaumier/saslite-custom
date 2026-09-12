@@ -27,6 +27,7 @@ class ByNode(Node):
     """BY statement."""
     variables: list[str] = field(default_factory=list)
     descending: list[bool] = field(default_factory=list)
+    notsorted: bool = False
 
 
 @dataclass

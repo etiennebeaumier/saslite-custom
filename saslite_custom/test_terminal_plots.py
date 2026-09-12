@@ -1,6 +1,8 @@
 import contextlib
 import io
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -11,10 +13,10 @@ from saslite.runtime.terminal_plots import box_summary, histogram_data, render_t
 
 class TerminalPlotTests(unittest.TestCase):
     def execute(self, code, frame=None):
-        with contextlib.redirect_stderr(io.StringIO()):
+        with tempfile.TemporaryDirectory() as folder, contextlib.redirect_stderr(io.StringIO()):
             sas = SasInterpreter()
             sas.create_dataset('test', frame if frame is not None else pd.DataFrame({'g': [1,1,1,2,2,2], 'x': [1,2,4,3,5,9]}))
-            result = sas.execute(code)
+            result = sas.execute(code, source_name=str(Path(folder) / "test.sas"))
         return result, '\n'.join(m for s in result.steps for m in s.output_messages)
 
     def test_default_panels_and_selection(self):

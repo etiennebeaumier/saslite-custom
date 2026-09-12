@@ -25,6 +25,7 @@ from saslite.executor.proc.extras import (
 )
 from saslite.executor.proc.stats import handle_proc_reg, handle_proc_logistic, handle_proc_corr, handle_proc_ttest
 from saslite.executor.proc.npar1way import handle_proc_npar1way
+from saslite.executor.proc.sgplot import handle_proc_sgplot
 from saslite.runtime.execution_result import RunSummary
 from saslite.diagnostics.reporter import Reporter
 
@@ -70,6 +71,7 @@ class SasInterpreter:
         include_errors: str = "strict",
     ) -> RunSummary:
         """Execute SAS source code."""
+        self._session.set_option("GRAPHICS_BASE_DIR", str(self._include_base_dir(source_name)))
         try:
             # Step 0: Expand %INCLUDE before DATALINES extraction so included
             # files can contain their own inline data blocks.
@@ -162,6 +164,8 @@ class SasInterpreter:
             dispatcher.register_proc("CORR", lambda p: handle_proc_corr(p, session, reporter))
             dispatcher.register_proc("TTEST", lambda p: handle_proc_ttest(p, session, reporter))
             dispatcher.register_proc("NPAR1WAY", lambda p: handle_proc_npar1way(p, session, reporter))
+
+            dispatcher.register_proc("SGPLOT", lambda p: handle_proc_sgplot(p, session, reporter))
 
             return dispatcher.run(program)
 

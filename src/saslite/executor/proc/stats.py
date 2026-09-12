@@ -570,26 +570,45 @@ def _ttest_summary(data):
     return n, float(data.mean()), sd, sd / math.sqrt(n), float(data.min()), float(data.max())
 
 
-def _ttest_limits(mean, se, df, sd, alpha):
-    margin = float(stats.t.ppf(1 - alpha / 2, df)) * se
+def _ttest_limits(mean, se, df, sd, alpha, sides="2"):
+    margin = float(stats.t.ppf(1 - alpha / (2 if sides == "2" else 1), df)) * se
     sd_limits = ([None, None] if sd is None else
                  [sd * math.sqrt(df / stats.chi2.ppf(1 - alpha / 2, df)),
                   sd * math.sqrt(df / stats.chi2.ppf(alpha / 2, df))])
-    return [mean, mean - margin, mean + margin, sd, *sd_limits]
+    lower = float("-inf") if sides == "L" else mean - margin
+    upper = float("inf") if sides == "U" else mean + margin
+    return [mean, lower, upper, sd, *sd_limits]
 
 
-def _ttest_test(mean, se, df, h0):
+def _ttest_limit_number(value):
+    if value is not None and math.isinf(float(value)):
+        return "-Infinity" if value < 0 else "Infinity"
+    return _ttest_number(value)
+
+
+def _ttest_test(mean, se, df, h0, sides="2"):
     if se <= 0 or not math.isfinite(se) or not math.isfinite(df):
         return float("nan"), float("nan")
     t = (mean - h0) / se
-    return t, float(2 * stats.t.sf(abs(t), df))
+    p = stats.t.cdf(t, df) if sides == "L" else stats.t.sf(t, df) if sides == "U" else 2 * stats.t.sf(abs(t), df)
+    return t, float(p)
 
 
 def handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> StepResult:
-    """Normal, two-sided t-tests with SAS-style statistics and inference tables."""
+    from saslite.executor.proc.grouping import run_grouped
+    return run_grouped(proc, session, reporter, _handle_proc_ttest)
+
+
+def _handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> StepResult:
+    """Normal t-tests with SAS-style statistics and inference tables."""
     from saslite.runtime.terminal_plots import render_ttest_plots, plot_width
     data_name = proc.options.get("DATA", "")
+    from saslite.runtime.png_graphics import PngWriter, ttest_pngs
     h0 = float(proc.options.get("H0", 0))
+    sides = str(proc.options.get("SIDES", "2")).upper()
+    if sides not in ("2", "L", "U") or not math.isfinite(h0):
+        return StepResult(success=False, error="PROC TTEST: use SIDES=2, L or U and a finite H0")
+    p_header = {"2": "Pr > |t|", "L": "Pr < t", "U": "Pr > t"}[sides]
     alpha = float(proc.options.get("ALPHA", .05))
     noprint = proc.options.get("NOPRINT", False)
     selected = set(proc.options.get("PLOTS", ["ALL"]))
@@ -606,7 +625,7 @@ def handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> S
     if not data_name:
         return StepResult(success=False, error="PROC TTEST requires DATA=")
     try:
-        ds = _resolve_dataset(session, data_name)
+        ds = proc.options.get("_DATASET") or _resolve_dataset(session, data_name)
     except KeyError:
         return StepResult(success=False, error=f"Dataset {data_name} not found")
 
@@ -629,10 +648,15 @@ def handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> S
             return StepResult(success=False, error=f"PROC TTEST: variable {name} not found")
     if not var_cols and not pairs:
         var_cols = [c.upper() for c in ds.data.columns
-                    if pd.api.types.is_numeric_dtype(ds.data[c]) and c.upper() not in class_vars]
+                    if pd.api.types.is_numeric_dtype(ds.data[c]) and c.upper() not in class_vars + proc.options.get("_BY_VARIABLES", [])]
     if not var_cols and not pairs:
         return StepResult(success=False, error="PROC TTEST: no numeric analysis variables")
 
+    for name in var_cols + [v for pair in pairs for v in pair]:
+        series = ds.data[cmap[name]]
+        if not pd.api.types.is_numeric_dtype(series) or np.isinf(series.dropna().to_numpy(dtype=float)).any():
+            return StepResult(success=False, error=f"PROC TTEST: variable {name} must contain numeric, finite observations or missing values")
+    writer = PngWriter(session, reporter, proc)
     buf = io.StringIO()
     buf.write(f"\n  The TTEST Procedure\n  Data Set: {ds.metadata.libref}.{ds.metadata.member_name}\n\n")
     confidence = f"{100 * (1 - alpha):g}%"
@@ -643,7 +667,6 @@ def handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> S
 
     def warn(message):
         warnings.append(message)
-        reporter.warning(message)
 
     def one_sample(data, label, paired_data=None):
         nonlocal analyses
@@ -656,17 +679,19 @@ def handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> S
         _ttest_table(buf, "Statistics", ["N", "Mean", "Std Dev", "Std Err", "Minimum", "Maximum"],
                      [[str(n), *map(_ttest_number, [mean, sd, se, minimum, maximum])]])
         _ttest_table(buf, "Confidence Limits", cl_headers,
-                     [list(map(_ttest_number, _ttest_limits(mean, se, df, sd, alpha)))])
-        t, p = _ttest_test(mean, se, df, h0)
-        _ttest_table(buf, "T-Tests", ["DF", "t Value", "Pr > |t|"],
+                     [list(map(_ttest_limit_number, _ttest_limits(mean, se, df, sd, alpha, sides)))])
+        t, p = _ttest_test(mean, se, df, h0, sides)
+        _ttest_table(buf, "T-Tests", ["DF", "t Value", p_header],
                      [[str(df), _ttest_number(t, 2), _ttest_pvalue(p)]])
         if se == 0:
             warn(f"PROC TTEST: {label} has zero standard error; the t-test is undefined")
         if show_plots:
-            limits = _ttest_limits(mean, se, df, sd, alpha)
+            limits = _ttest_limits(mean, se, df, sd, alpha, sides)
             buf.write(render_ttest_plots([data], [label], label,
                       [(label, mean, limits[1], limits[2])], h0, alpha,
                       width=plot_width(session), selected=selected, paired=paired_data))
+            ttest_pngs(writer, [data], [label], label,
+                        [(label, mean, limits[1], limits[2])], h0, alpha, selected, paired_data)
         analyses += 1
 
     if pairs:
@@ -709,17 +734,17 @@ def handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> S
             for method, sd, se in [("Pooled", sd_pool, se_pool), ("Satterthwaite", None, se_welch)]:
                 stat_rows.append(["Diff (1-2)", method, "", *map(_ttest_number, [difference, sd, se]), "", ""])
             _ttest_table(buf, "Statistics", [class_name, "Method", "N", "Mean", "Std Dev", "Std Err", "Minimum", "Maximum"], stat_rows)
-            cl_rows = [[label, "", *map(_ttest_number, _ttest_limits(s[1], s[3], s[0] - 1, s[2], alpha))]
+            cl_rows = [[label, "", *map(_ttest_limit_number, _ttest_limits(s[1], s[3], s[0] - 1, s[2], alpha, sides))]
                        for label, s in zip(labels, summaries)]
             tests = []
             for method, variance, df, sd, se in [("Pooled", "Equal", df_pool, sd_pool, se_pool),
                                                  ("Satterthwaite", "Unequal", df_welch, None, se_welch)]:
-                cl_rows.append(["Diff (1-2)", method, *map(_ttest_number, _ttest_limits(difference, se, df, sd, alpha))])
-                t, p = _ttest_test(difference, se, df, h0)
+                cl_rows.append(["Diff (1-2)", method, *map(_ttest_limit_number, _ttest_limits(difference, se, df, sd, alpha, sides))])
+                t, p = _ttest_test(difference, se, df, h0, sides)
                 tests.append([method, variance, str(df_pool) if method == "Pooled" else _ttest_number(df, 3),
                               _ttest_number(t, 2), _ttest_pvalue(p)])
             _ttest_table(buf, "Confidence Limits", [class_name, "Method", *cl_headers], cl_rows)
-            _ttest_table(buf, "T-Tests", ["Method", "Variances", "DF", "t Value", "Pr > |t|"], tests)
+            _ttest_table(buf, "T-Tests", ["Method", "Variances", "DF", "t Value", p_header], tests)
             if sd1 >= sd2:
                 high, low, num_df, den_df = sd1 ** 2, sd2 ** 2, n1 - 1, n2 - 1
             else:
@@ -736,10 +761,12 @@ def handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> S
                 intervals = []
                 for method, se, df in [("Pooled difference", se_pool, df_pool),
                                        ("Satterthwaite difference", se_welch, df_welch)]:
-                    limits = _ttest_limits(difference, se, df, None, alpha)
+                    limits = _ttest_limits(difference, se, df, None, alpha, sides)
                     intervals.append((method, difference, limits[1], limits[2]))
                 buf.write(render_ttest_plots(samples, [f"{class_name} = {label}" for label in labels],
                           var, intervals, h0, alpha, width=plot_width(session), selected=selected))
+                ttest_pngs(writer, samples, [f"{class_name} = {label}" for label in labels],
+                            var, intervals, h0, alpha, selected)
             analyses += 1
     else:
         for var in var_cols:
@@ -750,5 +777,5 @@ def handle_proc_ttest(proc: ProcNode, session: Session, reporter: Reporter) -> S
     output = buf.getvalue()
     if not noprint:
         reporter.log(output)
-    return StepResult(success=True, rows_affected=ds.nrow,
+    return StepResult(success=not writer.errors, error="; ".join(writer.errors) or None, image_paths=writer.paths, rows_affected=ds.nrow,
                       output_messages=[] if noprint else [output], warnings=warnings)

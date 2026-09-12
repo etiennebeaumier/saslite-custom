@@ -71,6 +71,12 @@ class Dispatcher:
             return handle_libname(step, self.session, self.reporter)
 
         if isinstance(step, OptionsNode):
+            from saslite.runtime.png_graphics import validate_ods
+            try:
+                validate_ods(step.options, self.session)
+            except (ValueError, OSError) as exc:
+                self.session.set_option("PNG_EXPORT", False)
+                return StepResult(success=False, error=f"ODS graphics: {exc}")
             for name, value in step.options.items():
                 self.session.set_option(name, value)
             return StepResult(
