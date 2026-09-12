@@ -184,6 +184,7 @@ def api_execute():
                     "error": step.error,
                     "notes": step.notes,
                     "warnings": step.warnings,
+                    "image_paths": step.image_paths,
                 })
 
             return jsonify({
@@ -191,6 +192,7 @@ def api_execute():
                 "error": result.error,
                 "output": output_text,
                 "steps": steps,
+                "image_paths": result.image_paths,
             })
         except Exception as e:
             traceback.print_exc()

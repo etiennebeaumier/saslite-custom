@@ -4,8 +4,9 @@
 
 Create a Python 3.10+ virtual environment, activate it, and run
 `python -m pip install -e '.[dev]'`. The editable install imports `src/saslite`
-and gives you the development build tools. Core tests use unittest, pandas,
-NumPy, SciPy and pyreadstat; no GUI or SAS runtime is required.
+and gives you the development build tools. Core tests use unittest, pandas, NumPy, SciPy, pyreadstat and Matplotlib Agg.
+Install Flask (`python -m pip install flask`) to include the lightweight GUI
+execution-JSON regression; CI does so. No browser, desktop GUI or SAS runtime is required.
 
 ```sh
 python -m unittest discover -s saslite_custom -p 'test_*.py' -v
@@ -13,6 +14,8 @@ saslite-custom examples/ttest.sas
 saslite-custom examples/rank_tests.sas
 saslite-custom examples/paired.sas
 python examples/python_api.py
+saslite-custom examples/coursework.sas
+saslite-custom examples/graphics.sas
 ```
 
 Tests cover statistical reference values, missing/tied/degenerate samples,
@@ -64,3 +67,10 @@ For bug reports, include the package version, Python/OS version, a minimal SAS
 example with synthetic data, expected behavior and actual output. Add regression
 coverage for fixes. Avoid changing statistical conventions without documenting
 and checking them against an independent reference.
+
+
+For custom.7, review representative PNGs from examples/graphics.sas and both
+statistical procedures, including one-sided intervals. PNG tests use temporary
+directories. The example's default graphs/ folder is ignored by Git. Do not add
+private datasets to make a chart fixture pass. CLI PNG smoke checks run against
+the built wheel outside the checkout in both CI Python versions.

@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show version",
     )
 
-    parser.add_argument('--no-plots', action='store_true', help='Show statistical tables without terminal plots')
+    parser.add_argument('--no-plots', action='store_true', help='Suppress terminal plots and PNG graphics')
     parser.add_argument('--plot-width', type=int, help='Terminal plot width in columns (40 to 160)')
     parser.add_argument('--lib', action='append', default=[], metavar='NAME=PATH',
                         help='Assign/override a SAS library without changing source; repeat for multiple libraries')

@@ -1034,9 +1034,8 @@ class SasTransformer(Transformer):
         return LabelNode(items=result_items)
 
     def label_item(self, items: list[Any]) -> tuple[str, str]:
-        non_tok = _non_tokens(items)
-        name = _get_name(non_tok[0]) if non_tok else ""
-        label = _get_text(non_tok[1]) if len(non_tok) > 1 else ""
+        name = next((str(i) for i in items if isinstance(i, Token) and i.type == "NAME"), "")
+        label = next((str(i) for i in items if isinstance(i, Token) and i.type == "STRING"), "")
         if (label.startswith("'") and label.endswith("'")) or (
             label.startswith('"') and label.endswith('"')
         ):
@@ -1584,20 +1583,6 @@ class SasTransformer(Transformer):
 
     # ── PROC MEANS ──────────────────────────────────
 
-    def proc_means(self, items: list[Any]) -> ProcNode:
-        options = {}
-        body = []
-        for item in _non_tokens(items):
-            if isinstance(item, dict):
-                if "action" in item:
-                    body.append(item)
-                else:
-                    options.update(item)
-            elif isinstance(item, list):
-                body.extend(item)
-            elif item is not None:
-                body.append(item)
-        return ProcNode(proc_name="MEANS", options=options, statements=body)
 
     def means_options(self, items: list[Any]) -> dict[str, Any]:
         result = {}
@@ -1606,20 +1591,6 @@ class SasTransformer(Transformer):
                 result.update(item)
         return result
 
-    def means_opt(self, items: list[Any]) -> dict[str, Any]:
-        if not items:
-            return {}
-        key = _get_text(items[0]).upper()
-        val_items = _non_tokens(items)
-        if key in ("DATA", "OUT"):
-            if val_items:
-                val = val_items[0]
-                if hasattr(val, 'name'):
-                    return {key: val.name}
-                return {key: _get_text(val)}
-        if key == "MAXDEC" and val_items:
-            return {key: int(_get_text(val_items[0]))}
-        return {key: True}
 
     def stat_name(self, items: list[Any]) -> str:
         return _get_text(items[0]).upper() if items else ""
@@ -1627,18 +1598,6 @@ class SasTransformer(Transformer):
     def means_body(self, items: list[Any]) -> list[Any]:
         return [item for item in items if item is not None]
 
-    def means_stmt(self, items: list[Any]) -> Any:
-        if not items:
-            return None
-        first = items[0]
-        if isinstance(first, Token):
-            keyword = str(first).upper()
-            names = items[1] if len(items) > 1 else []
-            if keyword == "VAR":
-                return VarListNode(variables=names if isinstance(names, list) else [names])
-            elif keyword == "CLASS":
-                return ClassNode(variables=names if isinstance(names, list) else [names])
-        return first
 
     # ── PROC FREQ ───────────────────────────────────
 
@@ -1829,9 +1788,6 @@ class SasTransformer(Transformer):
 
         return LibnameNode(libref=libref, engine=engine, path=path, options=options)
 
-    def ods_graphics_stmt(self, items: list[Any]) -> Any:
-        enabled = any(str(item).upper() == "ON" for item in items)
-        return OptionsNode(options={"ODS_GRAPHICS": enabled})
 
     def options_stmt(self, items: list[Any]) -> Any:
         options: dict[str, Any] = {}
@@ -1942,39 +1898,7 @@ class SasTransformer(Transformer):
                 return ByNode(variables=names if isinstance(names, list) else [names])
         return first if not isinstance(first, Token) else None
 
-    def means_stmt(self, items: list[Any]) -> Any:
-        """Handle means_stmt — VAR, CLASS, BY, OUTPUT."""
-        if not items:
-            return None
-        first = items[0]
-        if isinstance(first, Token):
-            keyword = str(first).upper()
-            names = items[1] if len(items) > 1 else []
-            if keyword == "VAR":
-                return VarListNode(variables=names if isinstance(names, list) else [names])
-            elif keyword == "CLASS":
-                return ClassNode(variables=names if isinstance(names, list) else [names])
-            elif keyword == "BY":
-                return ByNode(variables=names if isinstance(names, list) else [names])
-            elif keyword == "OUTPUT":
-                out_name = ""
-                stats: dict[str, str] = {}
-                for item in items[1:]:
-                    if isinstance(item, Token):
-                        continue
-                    if isinstance(item, VariableNode):
-                        out_name = item.name
-                    elif isinstance(item, tuple) and len(item) == 2:
-                        stats[item[0].upper()] = item[1].upper()
-                return {"action": "means_output", "out": out_name, "stats": stats}
-        return first if not isinstance(first, Token) else None
 
-    def means_output_kv(self, items: list[Any]) -> tuple[str, str]:
-        """STAT=newname pair in PROC MEANS OUTPUT statement."""
-        names = [str(t) for t in items if isinstance(t, Token) and str(t) != "="]
-        if len(names) >= 2:
-            return (names[0], names[1])
-        return ("", "")
 
     def distinct_arg(self, items: list[Any]) -> Any:
         """DISTINCT expr inside an aggregate — mark with a wrapper call."""
@@ -2750,3 +2674,83 @@ class SasTransformer(Transformer):
             if isinstance(item, tuple) and len(item) == 2 and item[0]:
                 kv[item[0].upper()] = item[1]
         return {"action": "output", **kv}
+
+    def proc_means(self, items):
+        name = next(str(t).upper() for t in items if isinstance(t, Token) and str(t).upper() in ("MEANS", "SUMMARY"))
+        return self._generic_proc(name, items)
+
+    def means_opt(self, items):
+        if len(items) == 1 and not isinstance(items[0], Token):
+            return {str(items[0]).upper(): True}
+        return self._generic_opt(items)
+
+    def means_stmt(self, items):
+        first = items[0]
+        if not isinstance(first, Token):
+            return first
+        keyword = str(first).upper()
+        if keyword == "VAR":
+            return VarListNode(variables=self._stmt_names(items))
+        if keyword == "CLASS":
+            return ClassNode(variables=self._stmt_names(items))
+        if keyword == "OUTPUT":
+            out = next((i.name for i in items if isinstance(i, VariableNode)), "")
+            specs = [i for i in items if isinstance(i, dict)]
+            return {"action": "means_output", "out": out, "specs": specs,
+                    "autoname": any(isinstance(i, Token) and str(i).upper() == "AUTONAME" for i in items)}
+        return None
+
+    def means_output_kv(self, items):
+        tokens = [str(i).upper() for i in items if isinstance(i, Token)]
+        equals = tokens.index("=")
+        return {"stat": tokens[0], "variables": next((i for i in items if isinstance(i, list)), None),
+                "names": tokens[equals+1:]}
+
+    def analysis_by_var(self, items):
+        name = next(str(i) for i in items if isinstance(i, Token) and i.type == "NAME")
+        return (name, any(str(i).upper() == "DESCENDING" for i in items))
+
+    def analysis_by_stmt(self, items):
+        variables = [i for i in items if isinstance(i, tuple)]
+        return ByNode(variables=[v[0] for v in variables], descending=[v[1] for v in variables],
+                      notsorted=any(isinstance(i, Token) and str(i).upper() == "NOTSORTED" for i in items))
+
+    def npar1way_stmt(self, items):
+        return next((i for i in items if not isinstance(i, Token)), None)
+
+    def ttest_stmt(self, items):
+        return next((i for i in items if not isinstance(i, Token)), None)
+
+    def signed_number(self, items):
+        return float("".join(str(i) for i in items))
+
+    def ods_graphics_opt(self, items):
+        return self._generic_opt(items)
+
+    def ods_graphics_stmt(self, items):
+        options = {}
+        for item in items:
+            if isinstance(item, dict):
+                options.update({"ODS_" + k: v for k, v in item.items()})
+            elif isinstance(item, Token) and str(item).upper() in ("ON", "OFF"):
+                options["ODS_GRAPHICS"] = str(item).upper() == "ON"
+                options["PNG_EXPORT"] = str(item).upper() == "ON"
+        return OptionsNode(options=options)
+
+    def ods_listing_stmt(self, items):
+        value = next(_clean_token_value(i) for i in items if isinstance(i, Token) and i.type == "STRING")
+        return OptionsNode(options={"ODS_GPATH": value})
+
+    def proc_sgplot(self, items):
+        data = next(i.name for i in items if isinstance(i, VariableNode))
+        return ProcNode(proc_name="SGPLOT", options={"DATA": data},
+                        statements=[i for i in items if isinstance(i, dict)])
+
+    def sgplot_histogram(self, items):
+        return {"action": "histogram", "variables": [str(i) for i in items if isinstance(i, Token) and i.type == "NAME"]}
+
+    def sgplot_hbox(self, items):
+        return {"action": "hbox", "variables": [str(i) for i in items if isinstance(i, Token) and i.type == "NAME"]}
+
+    def sgplot_scatter(self, items):
+        return {"action": "scatter", "variables": [str(i) for i in items if isinstance(i, Token) and i.type == "NAME"]}

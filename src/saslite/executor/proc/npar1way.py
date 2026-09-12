@@ -52,6 +52,12 @@ def _write_boxes(buf, samples, labels, variable, width):
 
 
 def handle_proc_npar1way(proc, session, reporter):
+    from saslite.executor.proc.grouping import run_grouped
+    return run_grouped(proc, session, reporter, _handle_proc_npar1way)
+
+
+def _handle_proc_npar1way(proc, session, reporter):
+    from saslite.runtime.png_graphics import PngWriter, draw_boxes
     data_name = proc.options.get('DATA', '')
     wilcoxon = bool(proc.options.get('WILCOXON') or proc.options.get('MWW'))
     fp = bool(proc.options.get('FP'))
@@ -65,7 +71,7 @@ def handle_proc_npar1way(proc, session, reporter):
     if plots - {'ALL', 'NONE', 'BOXPLOT', 'WILCOXONBOXPLOT', 'WILCOXON', 'FPBOXPLOT', 'FP'} or ('NONE' in plots and len(plots) > 1):
         return StepResult(success=False, error='PROC NPAR1WAY: use PLOTS=ALL, NONE, BOXPLOT, WILCOXONBOXPLOT or FPBOXPLOT')
     try:
-        ds = _resolve_dataset(session, data_name)
+        ds = proc.options.get("_DATASET") or _resolve_dataset(session, data_name)
     except KeyError as exc:
         return StepResult(success=False, error=f'PROC NPAR1WAY: {exc}')
     cmap = _col_map(ds.data)
@@ -82,8 +88,12 @@ def handle_proc_npar1way(proc, session, reporter):
             return StepResult(success=False, error=f'PROC NPAR1WAY: variable {name} not found')
     class_name = class_vars[0]
     if not var_cols:
-        var_cols = [c.upper() for c in ds.data.columns if c.upper() != class_name
+        var_cols = [c.upper() for c in ds.data.columns if c.upper() not in [class_name, *proc.options.get("_BY_VARIABLES", [])]
                     and pd.api.types.is_numeric_dtype(ds.data[c])]
+    for name in var_cols:
+        if not pd.api.types.is_numeric_dtype(ds.data[cmap[name]]):
+            return StepResult(success=False, error=f'PROC NPAR1WAY: analysis variable {name} must be numeric')
+    writer = PngWriter(session, reporter, proc)
     buf = io.StringIO()
     buf.write(f'\n  The NPAR1WAY Procedure\n  Data Set: {data_name.upper()}\n\n')
     used, warnings = 0, []
@@ -109,16 +119,16 @@ def handle_proc_npar1way(proc, session, reporter):
         reference = 1
         if fp:
             if len(levels) != 2 or min(counts) < 2:
-                return StepResult(success=False, error=f'PROC NPAR1WAY FP: {var} requires at least two observations in each of exactly two groups')
+                return StepResult(success=False, image_paths=writer.paths, warnings=warnings, error=f'PROC NPAR1WAY FP: {var} requires at least two observations in each of exactly two groups')
             requested = proc.options.get('FP_REFCLASS', 2)
             if isinstance(requested, str):
                 if requested not in labels:
-                    return StepResult(success=False, error=f'PROC NPAR1WAY FP: reference class {requested!r} not found')
+                    return StepResult(success=False, image_paths=writer.paths, warnings=warnings, error=f'PROC NPAR1WAY FP: reference class {requested!r} not found')
                 reference = labels.index(requested)
             elif requested in (1, 2):
                 reference = int(requested) - 1
             else:
-                return StepResult(success=False, error='PROC NPAR1WAY FP: numeric REFCLASS must be 1 or 2')
+                return StepResult(success=False, image_paths=writer.paths, warnings=warnings, error='PROC NPAR1WAY FP: numeric REFCLASS must be 1 or 2')
             fp_result = fligner_policello(samples, reference)
         buf.write(f'  Variable: {var}\n  Classified by: {class_name}\n\n')
         if wilcoxon:
@@ -180,18 +190,21 @@ def handle_proc_npar1way(proc, session, reporter):
             graph_labels = [f'{class_name} = {label}' for label in labels]
             if 'BOXPLOT' in plots:
                 _write_boxes(buf, samples, graph_labels, var, width)
+                writer.draw('boxplot', var, f'Raw data: {var}', lambda ax: draw_boxes(ax, samples, graph_labels, var))
             if wilcoxon and plots & {'ALL', 'WILCOXON', 'WILCOXONBOXPLOT'}:
                 buf.write('  Wilcoxon Scores (MWW)\n')
                 rank_samples = [ranks[classes == level].to_numpy() for level in levels]
                 _write_boxes(buf, rank_samples, graph_labels, 'Wilcoxon Score', width)
+                writer.draw('wilcoxonboxplot', var, f'Wilcoxon scores: {var}', lambda ax: draw_boxes(ax, rank_samples, graph_labels, 'Wilcoxon Score'))
             if fp_result is not None and plots & {'ALL', 'FP', 'FPBOXPLOT'}:
                 buf.write('  Fligner-Policello Placements\n')
                 _write_boxes(buf, fp_result['placements'], graph_labels, 'Placement', width)
+                writer.draw('fpboxplot', var, f'FP placements: {var}', lambda ax: draw_boxes(ax, fp_result['placements'], graph_labels, 'Placement'))
         used += 1
     if not used:
         return StepResult(success=False, error='PROC NPAR1WAY: no eligible analysis variables', warnings=warnings)
     output = buf.getvalue()
     if not proc.options.get('NOPRINT'):
         reporter.log(output)
-    return StepResult(success=True, rows_affected=ds.nrow, warnings=warnings,
+    return StepResult(success=not writer.errors, error="; ".join(writer.errors) or None, image_paths=writer.paths, rows_affected=ds.nrow, warnings=warnings,
                       output_messages=[] if proc.options.get('NOPRINT') else [output])

@@ -36,3 +36,30 @@ ties). Plot titles and axes explicitly identify these scores. Counts and
 filtering are identical to the corresponding test tables. Raw-data boxes
 remain an explicit local BOXPLOT choice. All use the common terminal renderer
 and shared axes, with no color dependency.
+
+
+## PNG renderer (custom.7)
+
+PNG graphics use headless Matplotlib Agg, 1200 × 800 pixels on white. Export is
+opted into by explicit ODS GRAPHICS ON; text defaults remain unchanged. Both
+renderers share box quartiles/whiskers, histogram and density calculations,
+normal Q-Q positions, inferential confidence limits, ranks and placements.
+PNG histograms call the existing bin rule with nominal width 80; terminal plots
+retain their selected-width binning. PNG density curves sample 300 points.
+
+Basic SGPLOT supports one histogram (percent scale), horizontal box plot, or
+X/Y scatter per procedure. Missing/nonfinite values are omitted, using complete
+pairs for scatter. Box means are marked with diamonds and outliers with open
+circles. Standard numeric fields/labels remain available in statistical tables.
+
+TTEST writes distributions with normal/kernel fits, boxes, Q-Q, and intervals,
+plus complete-pair profiles/agreement when requested. NPAR1WAY writes selected
+raw-value, Wilcoxon-rank and FP-placement boxes. One PNG covers each panel type,
+variable/pair and BY group; samples/classes share that image. One-sided intervals
+have arrows at unbounded ends. Undefined intervals remain unavailable.
+
+Visual QA checks orientation, titles/labels (including French accents), clipping,
+constant samples, outliers and unbounded confidence intervals. Tests independently
+check quartiles, histogram totals, image decoding/dimensions, file collision
+handling, path resolution, and output suppression. Pixel equality across
+Matplotlib/font versions is not a compatibility guarantee.

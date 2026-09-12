@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.1+custom.7
+
+- Add SGPLOT histogram, horizontal box and scatter PNG output, plus PNGs for every existing TTEST/NPAR1WAY graph type.
+- Add explicit ODS PNG activation, GPATH/IMAGENAME/IMAGEFMT controls, collision-free filenames and saved paths in Python/GUI results.
+- Preserve DATA-step LABEL text, including French accents, for dataset metadata and graph axes.
+- Add Matplotlib Agg as a core dependency; render 1200 × 800 images without a display server.
+- Repair MEANS/SUMMARY multi-variable OUTPUT, partial names, variable subsets, AUTONAME, NMISS, missing handling and name validation.
+- Correct BY/CLASS combinations, NWAY/MISSING, _TYPE_/_FREQ_/_STAT_ schemas and distinct SUMMARY defaults. This changes previously incorrect summary output shapes.
+- Add validated BY/DESCENDING/NOTSORTED analyses for MEANS/SUMMARY/TTEST/NPAR1WAY and group-specific diagnostics.
+- Add SIDES=L/U and signed H0 to TTEST; show one-sided confidence intervals in text and PNGs.
+- Expose the first failed-step error in RunSummary and emit t-test warnings once.
+- Add synthetic coursework examples, numerical and PNG regressions, and updated packaged help.
+
 ## 0.4.1+custom.6
 
 - Extract the complete custom interpreter into a portable source repository.

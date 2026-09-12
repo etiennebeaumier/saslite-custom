@@ -26,10 +26,12 @@ statement: data_step
          | proc_corr
          | proc_ttest
          | proc_npar1way
+         | proc_sgplot
          | libname_stmt ";"
          | filename_stmt ";"
          | options_stmt ";"
          | ods_graphics_stmt ";"
+         | ods_listing_stmt ";"
          | macro_let_stmt
          | ";" -> empty_stmt
 
@@ -47,7 +49,9 @@ libname_option: NAME "=" option_value
 filename_stmt: "FILENAME"i NAME STRING
 
 options_stmt: "OPTIONS"i option_item+
-ods_graphics_stmt: "ODS"i "GRAPHICS"i ("ON"i | "OFF"i)
+ods_graphics_stmt: "ODS"i "GRAPHICS"i ("ON"i | "OFF"i)? ("/" ods_graphics_opt+)?
+ods_graphics_opt: NAME "=" option_value
+ods_listing_stmt: "ODS"i "LISTING"i "GPATH"i "=" STRING
 option_item: NAME "=" option_value
            | NAME
            | "NONUMBER"i
@@ -264,17 +268,22 @@ proc_means: "PROC"i ("MEANS"i | "SUMMARY"i) (means_opt)* ";" (means_stmt)* "RUN"
 means_opt: "DATA"i "=" qualified_name
          | "OUT"i "=" qualified_name
          | "NOPRINT"i
+         | "PRINT"i
+         | "MISSING"i
+         | "NWAY"i
          | "MAXDEC"i "=" NUMBER
          | stat_name
 
-stat_name: "N"i | "MEAN"i | "SUM"i | "MIN"i | "MAX"i | "STD"i | "MEDIAN"i
+stat_name: "N"i | "NMISS"i | "MEAN"i | "SUM"i | "MIN"i | "MAX"i | "STD"i | "MEDIAN"i
 
 means_stmt: "VAR"i name_list ";"
           | "CLASS"i name_list ";"
-          | "BY"i name_list ";"
-          | "OUTPUT"i ("OUT"i "=" qualified_name)? (means_output_kv)* ";"
+          | analysis_by_stmt
+          | "OUTPUT"i ("OUT"i "=" qualified_name)? (means_output_kv)* ("/" "AUTONAME"i)? ";"
 
-means_output_kv: NAME "=" NAME
+means_output_kv: NAME ("(" name_list ")")? "=" NAME*
+analysis_by_stmt: "BY"i analysis_by_var+ ("NOTSORTED"i)? ";"
+analysis_by_var: ("DESCENDING"i)? NAME
 
 // ─── PROC FREQ ────────────────────────────────────
 
@@ -501,13 +510,15 @@ npar1way_opt: "DATA"i "=" qualified_name
             | "PLOTS"i "=" NAME
             | "PLOTS"i "=" "(" NAME+ ")" -> ttest_plots
 npar1way_stmt: "VAR"i name_list ";" -> ttest_var
-             | "CLASS"i name_list ";" -> ttest_class
+              | "CLASS"i name_list ";" -> ttest_class
+              | analysis_by_stmt
 
 proc_ttest: "PROC"i "TTEST"i (ttest_opt)* ";" (ttest_stmt)* ("RUN"i ";")? ("QUIT"i ";")?
 
 ttest_opt: "DATA"i "=" qualified_name
-         | "H0"i "=" NUMBER
+         | "H0"i "=" signed_number
          | "ALPHA"i "=" NUMBER
+         | "SIDES"i "=" (NAME | NUMBER)
          | "NOPRINT"i
          | "PLOTS"i "=" NAME -> ttest_plots
          | "PLOTS"i "=" "(" NAME+ ")" -> ttest_plots
@@ -515,6 +526,14 @@ ttest_opt: "DATA"i "=" qualified_name
 ttest_stmt: "VAR"i name_list ";" -> ttest_var
           | "CLASS"i name_list ";" -> ttest_class
           | "PAIRED"i NAME "*" NAME ";" -> ttest_paired
+          | analysis_by_stmt
+
+signed_number: ("+" | "-")? NUMBER
+
+proc_sgplot: "PROC"i "SGPLOT"i "DATA"i "=" qualified_name ";" sgplot_stmt+ "RUN"i ";"
+sgplot_stmt: "HISTOGRAM"i NAME ";" -> sgplot_histogram
+           | "HBOX"i NAME ";" -> sgplot_hbox
+           | "SCATTER"i "X"i "=" NAME "Y"i "=" NAME ";" -> sgplot_scatter
 
 // ─── Expressions ──────────────────────────────────
 

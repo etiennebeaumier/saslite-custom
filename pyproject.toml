@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "saslite"
-version = "0.4.1+custom.6"
+version = "0.4.1+custom.7"
 description = "Custom SASLite interpreter with SAS-style statistics, terminal plots, native dataset reading, and built-in help"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "SASLite contributors"}]
-dependencies = ["lark>=1.2.2", "pandas>=2.2.0", "numpy>=1.26.0", "scipy>=1.11.0", "pyreadstat>=1.2.0"]
+dependencies = ["lark>=1.2.2", "pandas>=2.2.0", "numpy>=1.26.0", "scipy>=1.11.0", "pyreadstat>=1.2.0", "matplotlib>=3.8"]
 
 [project.optional-dependencies]
 excel = ["openpyxl>=3.1.0"]

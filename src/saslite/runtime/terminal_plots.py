@@ -105,18 +105,25 @@ def histogram_data(samples, width):
     return edges, percentages
 
 
+def density_data(sample, edges, points):
+    xs = np.linspace(edges[0], edges[-1], points)
+    sd = float(np.std(sample, ddof=1))
+    if sd <= 0 or not math.isfinite(sd):
+        return xs, np.zeros_like(xs), np.zeros_like(xs)
+    scale = (edges[1] - edges[0]) * 100
+    return xs, stats.norm.pdf(xs, np.mean(sample), sd) * scale, stats.gaussian_kde(sample, bw_method='scott')(xs) * scale
+
+
+def qq_data(sample):
+    xs = stats.norm.ppf((np.arange(1, len(sample)+1) - .375) / (len(sample) + .25))
+    return xs, np.mean(sample) + np.std(sample, ddof=1) * xs
+
+
 def _histograms(samples, labels, variable, width):
     edges, percentages = histogram_data(samples, width)
-    xs = np.linspace(edges[0], edges[-1], width - 12)
     curves = []
     for sample in samples:
-        sd = float(np.std(sample, ddof=1))
-        if sd > 0:
-            scale = (edges[1] - edges[0]) * 100
-            normal = stats.norm.pdf(xs, np.mean(sample), sd) * scale
-            kernel = stats.gaussian_kde(sample, bw_method='scott')(xs) * scale
-        else:
-            normal = kernel = np.zeros_like(xs)
+        xs, normal, kernel = density_data(sample, edges, width - 12)
         curves.append((normal, kernel))
     ymax = max(float(np.max(values)) for values in [*percentages, *[c for pair in curves for c in pair]]) * 1.08
     lines = ['  Histograms and Density Curves', '  # histogram   . normal fit   ~ kernel density']
@@ -172,7 +179,7 @@ def _boxes(samples, labels, variable, width):
 
 
 def _qq(samples, labels, variable, width):
-    quantiles = [stats.norm.ppf((np.arange(1, len(s)+1) - .375) / (len(s) + .25)) for s in samples]
+    quantiles = [qq_data(s)[0] for s in samples]
     xlim = _domain(np.concatenate(quantiles))
     fits = [np.mean(s) + np.std(s, ddof=1) * np.array(xlim) for s in samples]
     ylim = _domain(np.concatenate([*samples, *fits]))
@@ -190,10 +197,10 @@ def _qq(samples, labels, variable, width):
 
 def _intervals(intervals, h0, confidence, width):
     finite = [(label, mean, low, high) for label, mean, low, high in intervals
-              if all(math.isfinite(float(v)) for v in (mean, low, high))]
+              if math.isfinite(float(mean)) and not any(math.isnan(float(v)) for v in (low, high))]
     if not finite:
         return ['  Mean Confidence Intervals: unavailable.']
-    bounds = _domain([h0, *[v for _, mean, low, high in finite for v in (mean, low, high)]])
+    bounds = _domain([h0, *[v for _, mean, low, high in finite for v in (mean, low, high) if math.isfinite(v)]])
     canvas = Canvas(bounds, (0, 1), width)
     lines = [f'  {confidence:g}% Confidence Intervals for the Mean',
              f'  [---M---] confidence interval; : H0={_num(h0)}']
@@ -201,12 +208,15 @@ def _intervals(intervals, h0, confidence, width):
     reference[canvas.x(h0)] = ':'
     lines.append('           ' + ''.join(reference))
     for label, mean, low, high in finite:
+        lo, hi = low, high
+        low = low if math.isfinite(low) else bounds[0]
+        high = high if math.isfinite(high) else bounds[1]
         row = [' '] * canvas.width
         for col in range(canvas.x(low), canvas.x(high)+1):
             row[col] = '-'
-        for value, mark in [(low, '['), (high, ']'), (mean, 'M')]:
+        for value, mark in [(low, '[' if math.isfinite(lo) else '<'), (high, ']' if math.isfinite(hi) else '>'), (mean, 'M')]:
             row[canvas.x(value)] = mark
-        lines.extend([f'  {label}: {_num(mean)} [{_num(low)}, {_num(high)}]', '           ' + ''.join(row)])
+        lines.extend([f'  {label}: {_num(mean)} [{_num(lo) if math.isfinite(lo) else "-Infinity"}, {_num(hi) if math.isfinite(hi) else "Infinity"}]', '           ' + ''.join(row)])
     lines.extend(['          +' + '-' * canvas.width, '           ' + _ticks(*bounds, canvas.width),
                   '           Mean / Mean Difference'])
     return lines
